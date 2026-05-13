@@ -1,0 +1,52 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test files
+test/*
+test.log
+test-*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# git setup stuff
+git.sh
+git.txt
+
+# Update checker data
+latestcheck*.json
+
+## Build artifacts
+bin/.DS_Store
+assets/
+dist/
+build/
+vendor/*
+sync*.sh
+compile*.sh
+compile*.bat
+compile*.ps1
+*.ps1
+setver.sh
+rename-app.sh
+*.sh
+rsrc_windows_amd64.syso
+kbgitexplorer
+REUSABLE-DIALOGS-GUIDE.md
+WINDOWS-SSH-SETUP.md
+
+# ALLOWED
+bin/*
+installers/*
+assets/*
+Inno/*
+

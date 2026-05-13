@@ -1,0 +1,16 @@
+[Details]
+ID = "com.github.amarillier.KrankyBearGitExplorer"
+Name = "KrankyBear GitExplorer"
+Creator = "Allan Marillier"
+Version = "0.1.0"
+Build = 2
+Icon = "KrankyBearNerd.png"
+
+[Migrations]
+  fyneDo = true
+
+[Development]
+  HelperText = "This binary was built with debug symbols"
+
+[Release]
+  HelperText = "This binary was built without debug symbols"

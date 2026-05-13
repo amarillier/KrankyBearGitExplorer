@@ -1,0 +1,64 @@
+═══════════════════════════════════════════════════════════════════════════════
+KrankyBear GitExplorer - RELEASE NOTES
+═══════════════════════════════════════════════════════════════════════════════
+Future ideas:
+- Directory-level rolled-up status (folders with modified children get a badge).
+- Right-click row actions: Reveal in Finder/Explorer, Copy path, Open in $EDITOR,
+  git rm -f, git rm --cached (for the .gitignore workflow).
+- Recent folders list (mirroring the existing recent-files mechanism for Diff).
+- Worktree vs HEAD diff — reuse the Compare Two Files… view to show the
+  current file on disk vs. the last-committed version (read-only on the git side).
+- fsnotify-based auto-refresh when the worktree changes externally.
+- Filter / search bar above the file list (name filter, "only dirty",
+  "only untracked").
+- Hide .git in the folder list by default, with a toggle (.git icon stays
+  clickable as the shortcut into tracked-files view).
+- Last-commit info in the repo header (subject, author, relative date).
+
+Version 0.1.0 - May 13, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ NEW (fork of KrankyBearDiff repurposed as a git repository explorer)
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Explorer main window: open a folder by file picker, drag-and-drop, or
+  Cmd/Ctrl+O. Shows Name / Size / Modified / Status columns for the contents
+  of the current folder.
+- Repo header strip: current path, branch name, and clean vs dirty+untracked
+  file counts when the folder is inside a git repository (via go-git/v5).
+- .git row pinned at the top of the folder list. Clicking it switches to a
+  tracked-files tree view of everything git is tracking inside the repo.
+- "Tracked files" toolbar toggle and the Up arrow (while in tracked view)
+  both return to the folder view.
+- Human-readable status labels in the Status column (modified, modified
+  (staged), untracked, ignored, deleted, renamed, conflict, …). Hover the
+  Status header for a quick legend; View → Git Status Legend… for the full
+  reference dialog.
+- Drag a folder anywhere onto the window to open it (drop a file → opens
+  its containing folder).
+- Cross-platform: macOS 10.13+, Windows 10+, Linux (X11 / Wayland).
+
+🧰 PRESERVED FROM KRANKYBEARDIFF
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Two-pane side-by-side diff with sync-scroll, line-numbers toggle, visible
+  whitespace, row-level merge actions, undo/redo, unified-patch export, and
+  recent-files lists — now reachable from File → Compare Two Files…
+  (also from the system tray).
+- Fyne menu bar, system tray (Show/Hide windows, theme switcher, help, about,
+  updates, quit).
+
+🪟 WINDOW BEHAVIOUR
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Hide All Windows snapshots which windows are visible and hides only those;
+  Show All Windows restores exactly that snapshot. Dialogs you'd already
+  dismissed stay dismissed through a hide/show round-trip.
+- Default launch size 825×600 (reduced from 1100×800); persisted size via
+  Preferences if enabled.
+
+🎨 BRANDING
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- New "KrankyBearNerd" icon throughout (window, tray, dialogs, installer).
+- Bundle / app ID unified at com.github.amarillier.KrankyBearGitExplorer
+  across Go appID, FyneApp.toml, Info-plist, and the Windows Inno installer.
+- Fresh Inno Setup AppId GUID so a Windows install of GitExplorer does not
+  collide with an existing KrankyBearDiff install.
+- Update checker repointed at github.com/amarillier/KrankyBearGitExplorer
+  (a 404 on the releases API until a release is cut on the new repo).
