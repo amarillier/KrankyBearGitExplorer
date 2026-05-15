@@ -104,6 +104,13 @@ type diffView struct {
 	leftDirty  bool
 	rightDirty bool
 
+	// leftReadOnly / rightReadOnly mark each buffer as immutable — used by the
+	// "Diff against HEAD" workflow, where the HEAD blob is read-only and only
+	// the worktree buffer may be edited or saved. Both flags exist so swapSides
+	// can keep the read-only state attached to the correct content.
+	leftReadOnly  bool
+	rightReadOnly bool
+
 	btnSaveLeft, btnSaveRight, btnSaveBoth *ttwidget.Button
 	btnUndo, btnRedo                       *ttwidget.Button
 	btnSwapSides                           *ttwidget.Button
@@ -210,6 +217,12 @@ func (v *diffView) refreshTitles() {
 	if v.rightP != "" {
 		rp = v.rightP
 	}
+	if v.leftReadOnly {
+		lp += "  (read-only)"
+	}
+	if v.rightReadOnly {
+		rp += "  (read-only)"
+	}
 	v.leftTitle.SetText(lp)
 	v.rightTitle.SetText(rp)
 }
@@ -312,17 +325,17 @@ func (v *diffView) refreshMainToolbar() {
 		return
 	}
 	fyne.Do(func() {
-		if v.leftP != "" && v.leftDirty {
+		if v.leftP != "" && v.leftDirty && !v.leftReadOnly {
 			v.btnSaveLeft.Enable()
 		} else {
 			v.btnSaveLeft.Disable()
 		}
-		if v.rightP != "" && v.rightDirty {
+		if v.rightP != "" && v.rightDirty && !v.rightReadOnly {
 			v.btnSaveRight.Enable()
 		} else {
 			v.btnSaveRight.Disable()
 		}
-		if (v.leftP != "" && v.leftDirty) || (v.rightP != "" && v.rightDirty) {
+		if (v.leftP != "" && v.leftDirty && !v.leftReadOnly) || (v.rightP != "" && v.rightDirty && !v.rightReadOnly) {
 			v.btnSaveBoth.Enable()
 		} else {
 			v.btnSaveBoth.Disable()
@@ -441,6 +454,12 @@ func (v *diffView) runApplyLeftToRightAtRow(rid widget.ListItemID) {
 	if v.model == nil || v.win == nil {
 		return
 	}
+	if v.rightReadOnly {
+		dialog.ShowInformation("Right side is read-only",
+			"This view shows the HEAD blob on the right; it can't be modified.\n\nUse Apply right → left to bring HEAD lines into the worktree (left) side instead.",
+			v.win)
+		return
+	}
 	ll := splitSourceLines(v.leftT)
 	rr := splitSourceLines(v.rightT)
 	newR, ok := applyLeftToRightAtRow(v.model, rid, ll, rr)
@@ -459,6 +478,12 @@ func (v *diffView) runApplyLeftToRightAtRow(rid widget.ListItemID) {
 
 func (v *diffView) runApplyRightToLeftAtRow(rid widget.ListItemID) {
 	if v.model == nil || v.win == nil {
+		return
+	}
+	if v.leftReadOnly {
+		dialog.ShowInformation("Left side is read-only",
+			"This view shows the HEAD blob on the left; it can't be modified.\n\nUse Apply left → right to bring HEAD lines into the worktree (right) side instead.",
+			v.win)
 		return
 	}
 	ll := splitSourceLines(v.leftT)
@@ -481,6 +506,12 @@ func (v *diffView) runDeleteLeftAtRow(rid widget.ListItemID) {
 	if v.model == nil || v.win == nil {
 		return
 	}
+	if v.leftReadOnly {
+		dialog.ShowInformation("Left side is read-only",
+			"This view shows the HEAD blob on the left; it can't be modified.",
+			v.win)
+		return
+	}
 	ll := splitSourceLines(v.leftT)
 	newL, ok := deleteLeftLineAtRow(v.model, rid, ll)
 	if !ok {
@@ -498,6 +529,12 @@ func (v *diffView) runDeleteLeftAtRow(rid widget.ListItemID) {
 
 func (v *diffView) runDeleteRightAtRow(rid widget.ListItemID) {
 	if v.model == nil || v.win == nil {
+		return
+	}
+	if v.rightReadOnly {
+		dialog.ShowInformation("Right side is read-only",
+			"This view shows the HEAD blob on the right; it can't be modified.",
+			v.win)
 		return
 	}
 	rr := splitSourceLines(v.rightT)
@@ -723,6 +760,9 @@ func (v *diffView) reloadSideAttempt(side int) {
 	if v.win == nil {
 		return
 	}
+	if (side == 0 && v.leftReadOnly) || (side == 1 && v.rightReadOnly) {
+		return
+	}
 	var path string
 	var dirty bool
 	if side == 0 {
@@ -756,6 +796,9 @@ func (v *diffView) reloadSideAttempt(side int) {
 }
 
 func (v *diffView) loadPathFromRecent(side int, path string) {
+	if (side == 0 && v.leftReadOnly) || (side == 1 && v.rightReadOnly) {
+		return
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		fyne.Do(func() {
@@ -769,6 +812,9 @@ func (v *diffView) loadPathFromRecent(side int, path string) {
 }
 
 func (v *diffView) loadSide(side int, uri fyne.URI) {
+	if (side == 0 && v.leftReadOnly) || (side == 1 && v.rightReadOnly) {
+		return
+	}
 	path, b, err := v.readURI(uri)
 	if err != nil {
 		fyne.Do(func() {
@@ -789,6 +835,9 @@ func (v *diffView) showRecentMenuForSide(side int, anchor fyne.CanvasObject) {
 }
 
 func (v *diffView) openFileDialog(side int) {
+	if (side == 0 && v.leftReadOnly) || (side == 1 && v.rightReadOnly) {
+		return
+	}
 	d := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 		if err != nil {
 			fyne.Do(func() { dialog.ShowError(err, v.win) })
@@ -844,6 +893,17 @@ func (v *diffView) dropTarget(pos fyne.Position, uris []fyne.URI) {
 		} else {
 			side = 1
 		}
+	}
+	// Read-only side drops retarget to the other pane — in Diff vs HEAD the
+	// HEAD buffer must stay intact, so we never let it accept a drop.
+	if side == 0 && v.leftReadOnly {
+		side = 1
+	} else if side == 1 && v.rightReadOnly {
+		side = 0
+	}
+	if side == 0 && v.leftReadOnly || side == 1 && v.rightReadOnly {
+		// Both sides read-only (shouldn't happen with current flows); bail.
+		return
 	}
 	if side >= 0 {
 		v.loadSide(side, uris[0])
@@ -1027,15 +1087,31 @@ func (v *diffView) registerMainCanvasShortcuts(c fyne.Canvas) {
 // installs the system tray. When false, the window is secondary (close = hide)
 // and the tray is left alone — the caller (explorer) owns it.
 func openDiffWindow(a fyne.App, master bool) *diffView {
+	return openDiffWindowWithPreload(a, master, "", "", "", "", false)
+}
+
+// openDiffWindowWithPreload is openDiffWindow plus pre-filled content and an
+// optional read-only-left mode. Used by the explorer's "Diff against HEAD"
+// flow to load the HEAD blob into the left pane (read-only) and the worktree
+// file into the right pane (editable).
+func openDiffWindowWithPreload(a fyne.App, master bool, leftP, leftT, rightP, rightT string, leftReadOnly bool) *diffView {
 	v := &diffView{
 		app:             a,
 		showLineNumbers: a.Preferences().BoolWithFallback(prefShowLineNumbers, false),
 		showWhitespace:  a.Preferences().BoolWithFallback(prefShowWhitespace, false),
 		syncScrollOn:    a.Preferences().BoolWithFallback(prefSyncScroll, false),
+		leftP:           leftP,
+		leftT:           leftT,
+		rightP:          rightP,
+		rightT:          rightT,
+		leftReadOnly:    leftReadOnly,
 	}
 	title := appName + " — Diff"
 	if master {
 		title = appName
+	}
+	if leftReadOnly {
+		title = appName + " — Diff vs HEAD"
 	}
 	w := a.NewWindow(title)
 	v.win = w

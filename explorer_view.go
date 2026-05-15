@@ -46,9 +46,13 @@ type explorerView struct {
 	tree        *widget.Tree
 	contentArea *fyne.Container
 
-	modeBtn    *ttwidget.Button
-	upBtn      *ttwidget.Button
-	reloadBtn  *ttwidget.Button
+	modeBtn   *ttwidget.Button
+	upBtn     *ttwidget.Button
+	reloadBtn *ttwidget.Button
+
+	// contextPop is the active row context-menu popup, kept so we can tear
+	// down its tooltip layer before opening a new one.
+	contextPop *widget.PopUp
 }
 
 type explorerEntry struct {
@@ -223,19 +227,25 @@ func (v *explorerView) buildList() *widget.List {
 			mod := widget.NewLabel("")
 			st := widget.NewLabel("")
 			st.Truncation = fyne.TextTruncateEllipsis
-			return container.NewHBox(
+			inner := container.NewHBox(
 				container.NewMax(sizingRect(exploColNameWidth), name),
 				container.NewMax(sizingRect(exploColSizeWidth), sz),
 				container.NewMax(sizingRect(exploColModWidth), mod),
 				container.NewMax(sizingRect(exploColStatWidth), st),
 			)
+			// Wrap the row so it can receive secondary tap (right-click) for
+			// the per-row context menu, while primary tap still falls through
+			// to the list's OnSelected logic.
+			return newExplorerRow(v, inner)
 		},
 		func(id widget.ListItemID, o fyne.CanvasObject) {
 			if id < 0 || id >= len(v.entries) {
 				return
 			}
 			e := v.entries[id]
-			row := o.(*fyne.Container)
+			wrap := o.(*explorerRow)
+			wrap.rowID = id
+			row := wrap.inner.(*fyne.Container)
 			name := row.Objects[0].(*fyne.Container).Objects[1].(*widget.Label)
 			sz := row.Objects[1].(*fyne.Container).Objects[1].(*widget.Label)
 			mod := row.Objects[2].(*fyne.Container).Objects[1].(*widget.Label)
@@ -658,12 +668,15 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	refresh := fyne.NewMenuItem("Refresh", func() { v.refresh() })
 	refresh.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyR, Modifier: fyne.KeyModifierShortcutDefault}
 	compare := fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) })
+	prefs := fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, nil) })
 
 	file := fyne.NewMenu("File",
 		openFolder,
 		refresh,
 		fyne.NewMenuItemSeparator(),
 		compare,
+		fyne.NewMenuItemSeparator(),
+		prefs,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() { v.quitApp() }),
 	)
@@ -734,6 +747,7 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Open Folder…", func() { v.browseFolder() }),
 		fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) }),
+		fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, nil) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Light Theme", func() { setLightTheme(v.app) }),
 		fyne.NewMenuItem("Dark Theme", func() { setDarkTheme(v.app) }),

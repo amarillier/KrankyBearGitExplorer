@@ -20,6 +20,9 @@ func (v *diffView) saveSideAttempt(side int) {
 	if v.win == nil {
 		return
 	}
+	if (side == 0 && v.leftReadOnly) || (side == 1 && v.rightReadOnly) {
+		return
+	}
 	var path, text string
 	var dirty *bool
 	if side == 0 {

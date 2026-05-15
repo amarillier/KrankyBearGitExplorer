@@ -8,8 +8,14 @@ import (
 )
 
 // showPreferences edits appearance and recent-file lists stored in app preferences.
+// v may be nil — when the dialog is opened from the explorer there's no diff
+// view to live-update, but the persisted preferences still take effect on the
+// next-opened diff window, and theme/window-size apply app-wide.
 func showPreferences(a fyne.App, v *diffView) {
-	parent := v.win
+	var parent fyne.Window
+	if v != nil {
+		parent = v.win
+	}
 	if parent == nil && len(a.Driver().AllWindows()) > 0 {
 		parent = a.Driver().AllWindows()[0]
 	}
@@ -53,7 +59,9 @@ func showPreferences(a fyne.App, v *diffView) {
 				return
 			}
 			clearRecent(a, 0)
-			v.refreshMainMenu()
+			if v != nil {
+				v.refreshMainMenu()
+			}
 		}, parent)
 	})
 	clearRight := widget.NewButton("Clear right recent files", func() {
@@ -62,7 +70,9 @@ func showPreferences(a fyne.App, v *diffView) {
 				return
 			}
 			clearRecent(a, 1)
-			v.refreshMainMenu()
+			if v != nil {
+				v.refreshMainMenu()
+			}
 		}, parent)
 	})
 	clearAll := widget.NewButton("Clear both sides", func() {
@@ -71,7 +81,9 @@ func showPreferences(a fyne.App, v *diffView) {
 				return
 			}
 			clearAllRecent(a)
-			v.refreshMainMenu()
+			if v != nil {
+				v.refreshMainMenu()
+			}
 		}, parent)
 	})
 
@@ -113,23 +125,28 @@ func showPreferences(a fyne.App, v *diffView) {
 		default:
 			setSystemTheme(a)
 		}
-		v.showLineNumbers = showLineNums.Checked
-		a.Preferences().SetBool(prefShowLineNumbers, v.showLineNumbers)
-		v.showWhitespace = showWS.Checked
-		a.Preferences().SetBool(prefShowWhitespace, v.showWhitespace)
-		v.syncScrollOn = syncScroll.Checked
-		a.Preferences().SetBool(prefSyncScroll, v.syncScrollOn)
-		if v.syncScrollOn && v.leftList != nil && v.rightList != nil {
-			v.syncScrollPrevL = v.leftList.GetScrollOffset()
-			v.syncScrollPrevR = v.rightList.GetScrollOffset()
-		}
+		// Persist the three diff-view defaults regardless of whether a diff view
+		// is open right now — the next-opened diff window reads these as its
+		// initial state.
+		a.Preferences().SetBool(prefShowLineNumbers, showLineNums.Checked)
+		a.Preferences().SetBool(prefShowWhitespace, showWS.Checked)
+		a.Preferences().SetBool(prefSyncScroll, syncScroll.Checked)
 		a.Preferences().SetBool(prefRememberWindowSize, rememberWin.Checked)
-		if rememberWin.Checked && v.win != nil {
-			saveMainWindowGeometryIfEnabled(a, v.win)
+		if rememberWin.Checked && parent != nil {
+			saveMainWindowGeometryIfEnabled(a, parent)
 		}
-		v.refreshDiffLists()
-		v.refreshMainToolbar()
-		v.refreshMainMenu()
+		if v != nil {
+			v.showLineNumbers = showLineNums.Checked
+			v.showWhitespace = showWS.Checked
+			v.syncScrollOn = syncScroll.Checked
+			if v.syncScrollOn && v.leftList != nil && v.rightList != nil {
+				v.syncScrollPrevL = v.leftList.GetScrollOffset()
+				v.syncScrollPrevR = v.rightList.GetScrollOffset()
+			}
+			v.refreshDiffLists()
+			v.refreshMainToolbar()
+			v.refreshMainMenu()
+		}
 	}, parent)
 	d.Resize(fyne.NewSize(520, 620))
 	d.Show()
