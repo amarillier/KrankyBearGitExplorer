@@ -123,11 +123,11 @@ func (v *diffView) buildMainMenu() *fyne.MainMenu {
 	openRecent.ChildMenu = fyne.NewMenu("", recentLeft, recentRight)
 
 	saveLeft := fyne.NewMenuItem("Save Left File", func() { v.saveSideAttempt(0) })
-	saveLeft.Disabled = v.leftP == "" || !v.leftDirty
+	saveLeft.Disabled = v.leftP == "" || !v.leftDirty || v.leftReadOnly
 	saveRight := fyne.NewMenuItem("Save Right File", func() { v.saveSideAttempt(1) })
-	saveRight.Disabled = v.rightP == "" || !v.rightDirty
+	saveRight.Disabled = v.rightP == "" || !v.rightDirty || v.rightReadOnly
 	saveBoth := fyne.NewMenuItem("Save Both Files", func() { v.saveBothAttempt() })
-	saveBoth.Disabled = (v.leftP == "" || !v.leftDirty) && (v.rightP == "" || !v.rightDirty)
+	saveBoth.Disabled = (v.leftP == "" || !v.leftDirty || v.leftReadOnly) && (v.rightP == "" || !v.rightDirty || v.rightReadOnly)
 
 	exportPatch := fyne.NewMenuItem("Export unified patch…", func() { v.exportUnifiedPatch() })
 	exportPatch.Disabled = v.leftT == "" && v.rightT == "" && v.leftP == "" && v.rightP == ""

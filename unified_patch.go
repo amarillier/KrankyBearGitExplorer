@@ -61,7 +61,7 @@ func suggestedPatchFileName(leftPath, rightPath string) string {
 	if sa != "" && sb != "" {
 		return sa + "-" + sb + ".patch"
 	}
-	return "kbdiff-unified.patch"
+	return "kbgitexplorer-unified.patch"
 }
 
 func sanitizePatchFileStem(s string) string {

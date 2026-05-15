@@ -15,6 +15,91 @@ Future ideas:
   clickable as the shortcut into tracked-files view).
 - Last-commit info in the repo header (subject, author, relative date).
 
+Version 0.2.0 - May 14, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Right-click context menu on each folder-view row:
+    • Reveal in Finder / Explorer / file manager (cross-platform).
+    • Copy path (absolute path to the clipboard).
+    • Open in $EDITOR (honours $VISUAL, then $EDITOR; falls back to the
+      OS' default open command).
+    • Diff against HEAD… (see below).
+    • git rm -f — remove from worktree + index (via go-git's wt.Remove).
+    • git rm --cached — remove from index only, leaves the file on disk
+      (shells out to `git`; pairs with manually adding a .gitignore entry).
+  Items are enabled per-row based on whether the file is tracked,
+  untracked, ignored, a directory, or .git.
+
+- Diff against HEAD: opens the existing two-pane diff with the HEAD
+  blob on the left (read-only) and the current worktree file on the
+  right (editable). Edits flow only HEAD → worktree; the reverse
+  direction is blocked. Left title shows "HEAD@<short-sha>: <rel>
+  (read-only)". Read-only enforcement is symmetric — Swap left/right
+  keeps the HEAD content protected on whichever side it now occupies.
+
+- Preferences (File → Preferences…) reachable from the explorer too —
+  theme, diff-view defaults (sync scroll, line numbers, visible
+  whitespace), remember-window-size, and clear-recent-files. Same
+  dialog as the diff window; works against app prefs whether or not a
+  diff window is open.
+
+🔧 IMPROVEMENTS
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Up button in the tracked-files view returns to the worktree view of
+  the same folder (one logical level back) instead of walking out of
+  the repo entirely. Tooltip changes between modes to reflect this.
+
+- Human-readable Status column labels — "modified", "untracked",
+  "ignored", "conflict", "modified (staged)", etc. — replacing the
+  cryptic two-character `git status --short` codes. Hover the Status
+  column header for a compact legend; View → Git Status Legend… opens
+  the full reference dialog.
+
+- Show All / Hide All Windows is now symmetric — Hide All snapshots
+  which windows are currently visible and Show All restores exactly
+  that set. Dialogs the user already dismissed before Hide All stay
+  dismissed through the round-trip.
+
+🐛 BUGS / FIXES
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Update checker repointed at github.com/amarillier/KrankyBearGitExplorer.
+  (Was still hitting the KrankyBearDiff repo and showing the wrong
+  "latest version".)
+
+- Default window size reduced to 825×600 (from 1100×800) — fits more
+  comfortably on smaller screens; remember-window-size still wins
+  when enabled.
+
+- macOS Info-plist.txt placeholder and Windows Inno installer GUID
+  aligned with the new bundle identity
+  (com.github.amarillier.KrankyBearGitExplorer). Fresh Inno AppId so a
+  Windows install of GitExplorer doesn't collide with an existing
+  KrankyBearDiff install.
+
+- compile-windows.sh referenced a non-existent
+  Inno/KrankyBearDiff.iss; now points at Inno/KrankyBearGitExplorer.iss
+  so Windows installer builds work end-to-end.
+
+- Windows winres step rejected the 1024×1024 source icon ("must fit in
+  256×256"); winres.json now points at the 64×64 and 256×256 sources
+  so go-winres produces a proper multi-resolution group icon.
+
+🏗️ INTERNALS
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Repo-wide rebrand sweep — build scripts, sync scripts, packaging
+  metadata, binary names (kbdiff* → kbgitexplorer*), Linux package
+  name (krankybear-diff → krankybear-gitexplorer), macOS .app bundle
+  name (KrankyBearDiff.app → KrankyBearGitExplorer.app), all
+  consistently KrankyBearGitExplorer now.
+
+- Decoupled diff engine: runApp split into openDiffWindow(master) so
+  the explorer can host the diff window as a secondary, and
+  openDiffWindowWithPreload for the new "Diff against HEAD" path.
+  setupMenus accepts setTray so secondary diff windows don't clobber
+  the explorer's system tray.
+
+
 Version 0.1.0 - May 13, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✨ NEW (fork of KrankyBearDiff repurposed as a git repository explorer)

@@ -88,6 +88,9 @@ func (v *diffView) swapSides() {
 	v.leftP, v.rightP = v.rightP, v.leftP
 	v.leftT, v.rightT = v.rightT, v.leftT
 	v.leftDirty, v.rightDirty = v.rightDirty, v.leftDirty
+	// Read-only follows the content across the swap so the HEAD buffer stays
+	// protected on whichever side it now lives.
+	v.leftReadOnly, v.rightReadOnly = v.rightReadOnly, v.leftReadOnly
 	v.recompute()
 	if v.syncScrollOn && v.leftList != nil && v.rightList != nil {
 		v.syncScrollPrevL = v.leftList.GetScrollOffset()
