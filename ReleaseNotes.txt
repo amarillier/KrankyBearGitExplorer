@@ -3,17 +3,122 @@ KrankyBear GitExplorer - RELEASE NOTES
 ═══════════════════════════════════════════════════════════════════════════════
 Future ideas:
 - Directory-level rolled-up status (folders with modified children get a badge).
-- Right-click row actions: Reveal in Finder/Explorer, Copy path, Open in $EDITOR,
-  git rm -f, git rm --cached (for the .gitignore workflow).
-- Recent folders list (mirroring the existing recent-files mechanism for Diff).
-- Worktree vs HEAD diff — reuse the Compare Two Files… view to show the
-  current file on disk vs. the last-committed version (read-only on the git side).
 - fsnotify-based auto-refresh when the worktree changes externally.
 - Filter / search bar above the file list (name filter, "only dirty",
   "only untracked").
-- Hide .git in the folder list by default, with a toggle (.git icon stays
-  clickable as the shortcut into tracked-files view).
-- Last-commit info in the repo header (subject, author, relative date).
+- File-level history — right-click a tracked file → "Show history for this
+  file…" — filtered Repo History showing only commits that touched it.
+- Search across history — filter the commit list by message substring or author.
+- Show-ignored-files toggle for .gitignore debugging.
+- Submodule indicator in the folder list (mark + click to open the submodule).
+- Stash list (read-only) — Tools → Show Stashes → click to diff.
+- Repo Health enrichment — add last-commit age, branch + tag counts to the
+  existing stats + fsck dialog. (Stats + fsck verify + hints already
+  shipped in v0.3.0.)
+- Compare any two refs/commits — multi-select two commits in the Repo
+  History view → "Compare these…" → existing read-only Historical Diff
+  but cross-commit instead of vs-parent. Useful for "what changed
+  between v1.0 and v1.5?" review work.
+- Contributors list — read-only: names, commit counts, last-contribution
+  date, lines-touched roll-up. Surfaces project/team shape.
+- Branch / Tag / Remote list views — three small read-only listings (name
+  + last commit + date). Pure display; deliberately no checkout / create /
+  delete buttons (those would cross the explorer-vs-manager line).
+
+
+Version 0.3.0 - May 15, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Repo History view — secondary window opened via View → Repo History… or
+  the new History toolbar button next to "Tracked files". Two-pane layout:
+  commit list on the left (subject + short-sha · author · relative time),
+  per-commit detail on the right (full author/email/timestamp, wrapped
+  commit message, list of files changed vs parent with A/M/D action codes).
+  Click a file → opens the existing diff engine with both sides read-only
+  ("Historical Diff" title) showing the parent's blob next to this commit's
+  blob. Lazy load 200 commits at a time via "Load more commits". Binary
+  blobs (NUL byte in first 8 KB) get a friendly dialog instead of garbage
+  output.
+
+- Last-commit info in the explorer's repo header — subject, author, and
+  relative time shown italicised under the path / branch line. Shows
+  "(no commits)" for a freshly-init'd repo.
+
+- Recent folders list — File → Open Recent Folder shows up to the 10 most
+  recently-opened folders (Open Folder dialog + drag-and-drop both feed it).
+  Submenu rebuilds after each open so the order is always fresh. Stale
+  paths are dropped automatically when clicked.
+
+- History toolbar button in the main explorer window — same affordance as
+  View → Repo History…, available without opening the menu.
+
+- Commit-subject subtitle in diff pane heads — when a diff is opened from
+  Repo History, each pane shows the commit subject directly under the
+  SHA/date/path title so you can tell two side-by-side historical diffs
+  apart at a glance. Hidden for non-history diffs to avoid an empty row.
+
+- Historical Diff pane title enrichment — short SHA + ISO date (e.g.
+  "319e5d3 2026-05-13: main.go") so parallel comparisons across multiple
+  history windows are self-identifying.
+
+- "Keep only one diff window open at a time" preference (default on).
+  Opening a new diff closes any prior one to avoid window explosions when
+  clicking through history. Diff windows with unsaved edits are kept open
+  so work is never silently lost — single-window mode is best-effort.
+
+- Hide .git from worktree listings by default — the .git directory no
+  longer appears in the folder list. Use the "Tracked files" toolbar
+  button (or View → Toggle Tracked Files / Folder View) to inspect what
+  git is tracking. Preferences → "Show .git in folder listings" surfaces
+  it again for users who want to drill into git's internals.
+
+- Repo Health dialog — View → Repo Health… (also on the tray and as a
+  new "Health" toolbar button). Shows object-database statistics (loose
+  + packed object counts, on-disk sizes, pack count, garbage files)
+  parsed from `git count-objects -v`, plus a `git fsck --no-progress`
+  verify summary counting dangling, unreachable, missing, and broken
+  objects with a sample list of the first 10. Closes with copy-paste-
+  ready CLI hints — e.g. "287 loose objects — consider running
+  `git -C <repo> gc`" — and a "Copy report to clipboard" button for bug
+  reports / chat. Pure read-only: never invokes git gc, prune, or any
+  other write operation; the user runs the suggested commands themselves
+  in their CLI.
+
+- Scan Dependencies… — View → Scan Dependencies… (also on the tray and
+  as a new "Scan" toolbar button). Runs the dep-scan vulnerability
+  scanner (the same skill that lives at ~/.claude/skills/dep-scan/)
+  against the current folder, shows a non-modal progress dialog while
+  it works, then renders the markdown report in a scrollable rich-text
+  dialog with a Copy-to-clipboard button. Script resolution prefers the
+  repo's own dep-scan.sh / dep-scan.ps1 (so teammates get a vendored
+  copy on clone — see README_DEPSCAN.md) and falls back to the user-
+  level skill install. Works on any folder, not just git repos — dep-
+  scan walks for manifests across multiple ecosystems.
+
+🔧 IMPROVEMENTS
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Symmetric read-only enforcement across Swap. Swapping sides in a Diff vs
+  HEAD or Historical Diff keeps the read-only state attached to the
+  immutable content; left/right now have independent leftReadOnly +
+  rightReadOnly flags that travel with the buffer on swap.
+
+- Diff factory signature extended (openDiffWindowWithPreload) to accept
+  per-side subtitles and a separate rightReadOnly flag, enabling the new
+  Historical Diff and pane-subtitle behaviours without disturbing the
+  existing Compare Two Files… and Diff vs HEAD flows.
+
+- Explorer's tray menu now includes Repo History… and Git Status Legend…
+  alongside the existing entries for parity with the menu bar.
+
+🐛 BUGS / FIXES
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Secondary diff windows no longer hijack the explorer's menu bar.
+  Previously on macOS, opening any diff from the explorer replaced the
+  app-wide menu and never restored it after the diff was closed (Fyne's
+  per-window SetMainMenu is a global NSApp.mainMenu set on macOS). The
+  diff window's controls remain available via toolbar, right-click row
+  menu, and keyboard shortcuts.
 
 
 Version 0.2.0 - May 15, 2026

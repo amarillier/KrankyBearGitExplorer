@@ -39,17 +39,20 @@ type explorerView struct {
 	// 0 = worktree (directory listing), 1 = tracked (go-git tree view)
 	mode int
 
-	pathLabel   *widget.Label
-	branchLabel *widget.Label
-	statusLabel *widget.Label
+	pathLabel       *widget.Label
+	branchLabel     *widget.Label
+	statusLabel     *widget.Label
+	lastCommitLabel *widget.Label
 	list        *widget.List
 	tree        *widget.Tree
 	contentArea *fyne.Container
 
-	modeBtn    *ttwidget.Button
-	upBtn      *ttwidget.Button
-	reloadBtn  *ttwidget.Button
-	historyBtn *ttwidget.Button
+	modeBtn     *ttwidget.Button
+	upBtn       *ttwidget.Button
+	reloadBtn   *ttwidget.Button
+	historyBtn  *ttwidget.Button
+	healthBtn   *ttwidget.Button
+	depScanBtn  *ttwidget.Button
 
 	// contextPop is the active row context-menu popup, kept so we can tear
 	// down its tooltip layer before opening a new one.
@@ -65,6 +68,12 @@ type explorerEntry struct {
 	rel     string // repo-relative slash path (empty if not in a repo)
 	status  string
 }
+
+// explorerPrefsChangedHook is set when the explorer window opens. Used by the
+// shared preferences dialog to ask the explorer to re-read its preferences
+// after the user clicks Save (refreshes the menu's Recent Folders submenu
+// and the worktree listing when "Show .git" toggled).
+var explorerPrefsChangedHook func()
 
 // runExplorerApp is the app's main entry: boots the Fyne app and shows the
 // explorer as the master window.
@@ -102,6 +111,10 @@ func openExplorerWindow(a fyne.App, master bool) *explorerView {
 	}
 
 	v.setupMenus(master)
+	explorerPrefsChangedHook = func() {
+		v.refresh()
+		v.refreshMenu()
+	}
 	windowShow(w)
 	return v
 }
@@ -127,7 +140,14 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.pathLabel.Truncation = fyne.TextTruncateEllipsis
 	v.branchLabel = widget.NewLabel("")
 	v.statusLabel = widget.NewLabel("")
-	headerRight := container.NewVBox(v.pathLabel, container.NewHBox(v.branchLabel, v.statusLabel))
+	v.lastCommitLabel = widget.NewLabel("")
+	v.lastCommitLabel.TextStyle = fyne.TextStyle{Italic: true}
+	v.lastCommitLabel.Truncation = fyne.TextTruncateEllipsis
+	headerRight := container.NewVBox(
+		v.pathLabel,
+		container.NewHBox(v.branchLabel, v.statusLabel),
+		v.lastCommitLabel,
+	)
 
 	headerRow := container.NewBorder(nil, nil, headerLeft, nil, headerRight)
 
@@ -155,7 +175,16 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.historyBtn.Importance = widget.LowImportance
 	v.historyBtn.Disable()
 
-	toolRow := container.NewHBox(browseBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn, v.historyBtn)
+	v.healthBtn = ttwidget.NewButtonWithIcon("Health", theme.InfoIcon(), func() { v.openRepoHealth() })
+	v.healthBtn.SetToolTip("Open the Repo Health dialog — object-database stats + git fsck verify + copy-paste CLI hints")
+	v.healthBtn.Importance = widget.LowImportance
+	v.healthBtn.Disable()
+
+	v.depScanBtn = ttwidget.NewButtonWithIcon("Scan", theme.SearchIcon(), func() { v.runDepScan() })
+	v.depScanBtn.SetToolTip("Run dep-scan against this folder — multi-ecosystem dependency vulnerability scan (osv-scanner + govulncheck)")
+	v.depScanBtn.Importance = widget.LowImportance
+
+	toolRow := container.NewHBox(browseBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn, v.historyBtn, v.healthBtn, v.depScanBtn)
 
 	headerLabels := buildExplorerHeaderRow()
 	v.list = v.buildList()
@@ -387,7 +416,9 @@ func (v *explorerView) browseFolder() {
 		if uri == nil {
 			return
 		}
+		addRecentFolder(v.app, uri.Path())
 		v.loadFolder(uri.Path())
+		v.refreshMenu()
 	}, v.win)
 	d.Show()
 }
@@ -405,7 +436,36 @@ func (v *explorerView) dropTarget(_ fyne.Position, uris []fyne.URI) {
 	if !info.IsDir() {
 		p = filepath.Dir(p)
 	}
+	addRecentFolder(v.app, p)
 	v.loadFolder(p)
+	v.refreshMenu()
+}
+
+// openRecentFolder is the click handler for the File → Open Recent Folder
+// submenu. Validates the path still exists (drops it from recents if not),
+// promotes it to the top of the recents list, loads it, and refreshes the
+// menu so the new ordering shows up next time the submenu is opened.
+func (v *explorerView) openRecentFolder(path string) {
+	if _, err := os.Stat(path); err != nil {
+		removeRecentFolder(v.app, path)
+		v.refreshMenu()
+		dialog.ShowError(fmt.Errorf("recent folder no longer exists: %s", path), v.win)
+		return
+	}
+	addRecentFolder(v.app, path)
+	v.loadFolder(path)
+	v.refreshMenu()
+}
+
+// refreshMenu rebuilds and re-applies the explorer's window menu. Used after
+// state changes that the menu reflects (recent folders list mainly).
+func (v *explorerView) refreshMenu() {
+	fyne.Do(func() {
+		if v.win == nil {
+			return
+		}
+		v.win.SetMainMenu(v.buildMainMenu())
+	})
 }
 
 func (v *explorerView) loadFolder(path string) {
@@ -458,7 +518,8 @@ func (v *explorerView) refresh() {
 		}
 	}
 
-	entries, err := readDirEntries(v.currentPath, v.repoRoot, v.repoModel)
+	showDotGit := v.app.Preferences().BoolWithFallback(prefShowDotGit, false)
+	entries, err := readDirEntries(v.currentPath, v.repoRoot, v.repoModel, showDotGit)
 	if err != nil {
 		dialog.ShowError(err, v.win)
 		return
@@ -481,13 +542,17 @@ func (v *explorerView) refresh() {
 				v.statusLabel.SetText("")
 			}
 		}
+		v.lastCommitLabel.SetText(latestCommitSummary(v.repo))
 		v.modeBtn.Enable()
 		v.historyBtn.Enable()
+		v.healthBtn.Enable()
 	} else {
 		v.branchLabel.SetText("(not a git repository)")
 		v.statusLabel.SetText("")
+		v.lastCommitLabel.SetText("")
 		v.modeBtn.Disable()
 		v.historyBtn.Disable()
+		v.healthBtn.Disable()
 	}
 
 	if v.list != nil {
@@ -538,13 +603,20 @@ func (v *explorerView) updateUpButton() {
 	}
 }
 
-func readDirEntries(path, repoRoot string, m *repoTreeModel) ([]explorerEntry, error) {
+func readDirEntries(path, repoRoot string, m *repoTreeModel, showDotGit bool) ([]explorerEntry, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]explorerEntry, 0, len(entries))
 	for _, de := range entries {
+		// .git is intentionally hidden by default — most users don't need to
+		// see it in the worktree list, and the "Tracked files" toolbar button
+		// is the proper affordance for inspecting what git is tracking.
+		// Preferences → "Show .git in folder listings" surfaces it again.
+		if !showDotGit && de.IsDir() && de.Name() == ".git" {
+			continue
+		}
 		info, err := de.Info()
 		if err != nil {
 			continue
@@ -583,6 +655,26 @@ func readDirEntries(path, repoRoot string, m *repoTreeModel) ([]explorerEntry, e
 		return strings.ToLower(a.name) < strings.ToLower(b.name)
 	})
 	return out, nil
+}
+
+// latestCommitSummary returns a single line describing the HEAD commit for
+// display in the explorer's repo header: "Last: <subject> · <author> · <when>".
+// Returns "(no commits)" when the repo has no commits yet, "" on any other
+// failure so the header simply stays empty.
+func latestCommitSummary(repo *git.Repository) string {
+	head, err := repo.Head()
+	if err != nil {
+		return "(no commits)"
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("Last: %s · %s · %s",
+		firstLine(commit.Message),
+		commit.Author.Name,
+		humanRelativeTime(commit.Author.When),
+	)
 }
 
 // humanStatusLabel turns the raw two-character git status code produced by
@@ -673,6 +765,8 @@ func (v *explorerView) setupMenus(setTray bool) {
 func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	openFolder := fyne.NewMenuItem("Open Folder…", func() { v.browseFolder() })
 	openFolder.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyO, Modifier: fyne.KeyModifierShortcutDefault}
+	openRecent := fyne.NewMenuItem("Open Recent Folder", nil)
+	openRecent.ChildMenu = v.buildRecentFoldersSubmenu()
 	refresh := fyne.NewMenuItem("Refresh", func() { v.refresh() })
 	refresh.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyR, Modifier: fyne.KeyModifierShortcutDefault}
 	compare := fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) })
@@ -680,6 +774,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 
 	file := fyne.NewMenu("File",
 		openFolder,
+		openRecent,
 		refresh,
 		fyne.NewMenuItemSeparator(),
 		compare,
@@ -692,6 +787,8 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	toggleView := fyne.NewMenuItem("Toggle Tracked Files / Folder View", func() { v.toggleMode() })
 	legend := fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() })
 	history := fyne.NewMenuItem("Repo History…", func() { v.openHistory() })
+	health := fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() })
+	scanDeps := fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() })
 
 	view := fyne.NewMenu("View",
 		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
@@ -699,6 +796,8 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItemSeparator(),
 		toggleView,
 		history,
+		health,
+		scanDeps,
 		legend,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Light Theme", func() { setLightTheme(v.app) }),
@@ -715,6 +814,31 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	return fyne.NewMainMenu(file, view, help)
 }
 
+// buildRecentFoldersSubmenu builds the File → Open Recent Folder submenu.
+// Includes a sentinel "(no recent folders)" disabled item when the list is
+// empty, plus a "Clear recent folders" entry at the bottom when populated.
+func (v *explorerView) buildRecentFoldersSubmenu() *fyne.Menu {
+	paths := loadRecentFolders(v.app)
+	if len(paths) == 0 {
+		empty := fyne.NewMenuItem("(no recent folders)", nil)
+		empty.Disabled = true
+		return fyne.NewMenu("", empty)
+	}
+	items := make([]*fyne.MenuItem, 0, len(paths)+2)
+	for _, p := range paths {
+		path := p
+		items = append(items, fyne.NewMenuItem(recentMenuLabel(path), func() {
+			v.openRecentFolder(path)
+		}))
+	}
+	items = append(items, fyne.NewMenuItemSeparator())
+	items = append(items, fyne.NewMenuItem("Clear recent folders", func() {
+		clearRecentFolders(v.app)
+		v.refreshMenu()
+	}))
+	return fyne.NewMenu("", items...)
+}
+
 // openHistory pops a secondary window with the current repo's commit log and
 // a per-commit detail pane. Requires the explorer to be inside a git repo;
 // shows an informational dialog otherwise.
@@ -726,6 +850,34 @@ func (v *explorerView) openHistory() {
 		return
 	}
 	openHistoryWindow(v.app, v.repo, v.repoRoot, v.win)
+}
+
+// openRepoHealth pops the read-only Repo Health dialog (object-database
+// statistics + `git fsck` verify summary + copy-paste-ready hints).
+// Requires a repo to be loaded; shows an informational dialog otherwise.
+func (v *explorerView) openRepoHealth() {
+	if v.repo == nil || v.repoRoot == "" {
+		dialog.ShowInformation("No repository",
+			"Open a folder that is inside a git repository first, then try again.",
+			v.win)
+		return
+	}
+	showRepoHealth(v.app, v.win, v.repoRoot)
+}
+
+// runDepScan launches the dep-scan vulnerability scanner against the current
+// folder (whether or not it's a git repo — dep-scan walks for manifests so
+// any project root works). The script is resolved from the repo's own copy
+// or the user's ~/.claude/skills/dep-scan/ install; results are rendered in
+// a scrollable dialog as the rich-text markdown that dep-scan produces.
+func (v *explorerView) runDepScan() {
+	if v.currentPath == "" {
+		dialog.ShowInformation("No folder",
+			"Open a folder first — dep-scan walks the chosen folder for dependency manifests (go.mod, package.json, requirements.txt, etc.).",
+			v.win)
+		return
+	}
+	runDepScanForRepo(v.app, v.win, v.currentPath)
 }
 
 func (v *explorerView) showStatusLegend() {
@@ -764,12 +916,24 @@ func (v *explorerView) showStatusLegend() {
 }
 
 func (v *explorerView) buildTrayMenu() *fyne.Menu {
+	// The tray menu is built once at startup (rebuilding the system tray
+	// menu repeatedly on GLFW/macOS leaks goroutines — see the comment on
+	// the diff window's buildTrayMenu). So this Recent Folders submenu
+	// captures the recents-list-as-of-app-launch and stays static for the
+	// session. For the live-updating list, use the menu bar's File → Open
+	// Recent Folder, which rebuilds after every folder open.
+	trayRecentFolders := fyne.NewMenuItem("Open Recent Folder", nil)
+	trayRecentFolders.ChildMenu = v.buildRecentFoldersSubmenu()
+
 	return fyne.NewMenu(appName,
 		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItem("Hide All Windows", func() { hideAllAppWindows(v.app) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Open Folder…", func() { v.browseFolder() }),
+		trayRecentFolders,
 		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
+		fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() }),
+		fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() }),
 		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
 		fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) }),
 		fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, nil) }),

@@ -53,6 +53,11 @@ func showPreferences(a fyne.App, v *diffView) {
 	singleDiffNote := widget.NewLabel("When enabled, opening a new diff (Compare Two Files…, Diff against HEAD, or any file click in Repo History) closes any existing diff window. Windows with unsaved edits are kept open so work is never silently lost. Disable if you want to compare several files side-by-side.")
 	singleDiffNote.Wrapping = fyne.TextWrapWord
 
+	showDotGit := widget.NewCheck("Show .git directory in folder listings", nil)
+	showDotGit.Checked = a.Preferences().BoolWithFallback(prefShowDotGit, false)
+	showDotGitNote := widget.NewLabel("Off by default — .git is usually noise in the worktree view. Use the Tracked files toolbar button to inspect what git is tracking. Turn this on if you actually want to drill into .git's internals.")
+	showDotGitNote.Wrapping = fyne.TextWrapWord
+
 	rememberWin := widget.NewCheck("Remember main window size between launches", nil)
 	rememberWin.Checked = a.Preferences().BoolWithFallback(prefRememberWindowSize, false)
 	rememberWinNote := widget.NewLabel("When enabled, the window size is stored when you quit the app (menu Quit, tray Quit, or closing the main window). When disabled, the app opens at the default size.")
@@ -92,6 +97,18 @@ func showPreferences(a fyne.App, v *diffView) {
 		}, parent)
 	})
 
+	clearFolders := widget.NewButton("Clear recent folders", func() {
+		dialog.ShowConfirm("Clear recent folders", "Remove all saved folder paths from the explorer's recent list?", func(ok bool) {
+			if !ok {
+				return
+			}
+			clearRecentFolders(a)
+			if explorerPrefsChangedHook != nil {
+				explorerPrefsChangedHook()
+			}
+		}, parent)
+	})
+
 	recentsIntro := widget.NewLabel("Recent paths are updated when you open a file. Open them again from File → Open Recent, or the history icon in each pane’s toolbar (the tray has no recent list).")
 	recentsIntro.Wrapping = fyne.TextWrapWord
 
@@ -99,6 +116,10 @@ func showPreferences(a fyne.App, v *diffView) {
 		widget.NewLabelWithStyle("Appearance", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		themeRadio,
 		appearanceNote,
+		widget.NewSeparator(),
+		widget.NewLabelWithStyle("Explorer", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		showDotGit,
+		showDotGitNote,
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle("Diff view", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		showLineNums,
@@ -118,6 +139,7 @@ func showPreferences(a fyne.App, v *diffView) {
 		recentsIntro,
 		container.NewGridWithColumns(2, clearLeft, clearRight),
 		clearAll,
+		clearFolders,
 	)
 
 	d := dialog.NewCustomConfirm("Preferences", "Save", "Cancel", content, func(save bool) {
@@ -139,7 +161,13 @@ func showPreferences(a fyne.App, v *diffView) {
 		a.Preferences().SetBool(prefShowWhitespace, showWS.Checked)
 		a.Preferences().SetBool(prefSyncScroll, syncScroll.Checked)
 		a.Preferences().SetBool(prefSingleDiffWindow, singleDiff.Checked)
+		a.Preferences().SetBool(prefShowDotGit, showDotGit.Checked)
 		a.Preferences().SetBool(prefRememberWindowSize, rememberWin.Checked)
+		// Ask the explorer to re-apply preferences (refresh the menu + the
+		// worktree listing in case "Show .git" flipped).
+		if explorerPrefsChangedHook != nil {
+			explorerPrefsChangedHook()
+		}
 		if rememberWin.Checked && parent != nil {
 			saveMainWindowGeometryIfEnabled(a, parent)
 		}

@@ -39,6 +39,11 @@ compile*.ps1
 setver.sh
 rename-app.sh
 *.sh
+
+# dep-scan helper scripts — tracked despite the *.sh and *.ps1 broad excludes
+# so teammates who clone the repo get them out-of-the-box.
+!dep-scan.sh
+!dep-scan.ps1
 rsrc_windows_amd64.syso
 kbgitexplorer
 REUSABLE-DIALOGS-GUIDE.md

@@ -10,10 +10,12 @@ import (
 const (
 	prefRecentLeft         = "recentPathsLeft"
 	prefRecentRight        = "recentPathsRight"
+	prefRecentFolders      = "recentFolderPaths"
 	prefShowLineNumbers    = "showLineNumbers"
 	prefShowWhitespace     = "showWhitespace"
 	prefSyncScroll         = "syncScroll"
 	prefSingleDiffWindow   = "singleDiffWindow"
+	prefShowDotGit         = "showDotGitInFolderList"
 	prefRememberWindowSize = "rememberWindowSize"
 	prefWindowWidth        = "windowWidth"
 	prefWindowHeight       = "windowHeight"
@@ -97,6 +99,51 @@ func clearRecent(a fyne.App, side int) {
 func clearAllRecent(a fyne.App) {
 	clearRecent(a, 0)
 	clearRecent(a, 1)
+}
+
+// --- recent folders (explorer) ----------------------------------------------
+
+const maxRecentFolders = 10
+
+func loadRecentFolders(a fyne.App) []string {
+	return loadRecentList(a, prefRecentFolders)
+}
+
+func addRecentFolder(a fyne.App, path string) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return
+	}
+	list := loadRecentList(a, prefRecentFolders)
+	out := []string{path}
+	for _, p := range list {
+		if p == path {
+			continue
+		}
+		out = append(out, p)
+		if len(out) >= maxRecentFolders {
+			break
+		}
+	}
+	saveRecentList(a, prefRecentFolders, out)
+}
+
+func removeRecentFolder(a fyne.App, path string) {
+	list := loadRecentList(a, prefRecentFolders)
+	if len(list) == 0 {
+		return
+	}
+	out := list[:0]
+	for _, p := range list {
+		if p != path {
+			out = append(out, p)
+		}
+	}
+	saveRecentList(a, prefRecentFolders, out)
+}
+
+func clearRecentFolders(a fyne.App) {
+	saveRecentList(a, prefRecentFolders, nil)
 }
 
 func recentMenuLabel(path string) string {
