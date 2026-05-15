@@ -15,7 +15,8 @@ Future ideas:
   clickable as the shortcut into tracked-files view).
 - Last-commit info in the repo header (subject, author, relative date).
 
-Version 0.2.0 - May 14, 2026
+
+Version 0.2.0 - May 15, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✨ NEW
 ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔

@@ -48,6 +48,11 @@ func showPreferences(a fyne.App, v *diffView) {
 	syncScrollNote := widget.NewLabel("Matches the main toolbar sync-scroll control; both are saved here when you click Save.")
 	syncScrollNote.Wrapping = fyne.TextWrapWord
 
+	singleDiff := widget.NewCheck("Keep only one diff window open at a time", nil)
+	singleDiff.Checked = a.Preferences().BoolWithFallback(prefSingleDiffWindow, true)
+	singleDiffNote := widget.NewLabel("When enabled, opening a new diff (Compare Two Files…, Diff against HEAD, or any file click in Repo History) closes any existing diff window. Windows with unsaved edits are kept open so work is never silently lost. Disable if you want to compare several files side-by-side.")
+	singleDiffNote.Wrapping = fyne.TextWrapWord
+
 	rememberWin := widget.NewCheck("Remember main window size between launches", nil)
 	rememberWin.Checked = a.Preferences().BoolWithFallback(prefRememberWindowSize, false)
 	rememberWinNote := widget.NewLabel("When enabled, the window size is stored when you quit the app (menu Quit, tray Quit, or closing the main window). When disabled, the app opens at the default size.")
@@ -102,6 +107,8 @@ func showPreferences(a fyne.App, v *diffView) {
 		wsNote,
 		syncScroll,
 		syncScrollNote,
+		singleDiff,
+		singleDiffNote,
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle("Window", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		rememberWin,
@@ -131,6 +138,7 @@ func showPreferences(a fyne.App, v *diffView) {
 		a.Preferences().SetBool(prefShowLineNumbers, showLineNums.Checked)
 		a.Preferences().SetBool(prefShowWhitespace, showWS.Checked)
 		a.Preferences().SetBool(prefSyncScroll, syncScroll.Checked)
+		a.Preferences().SetBool(prefSingleDiffWindow, singleDiff.Checked)
 		a.Preferences().SetBool(prefRememberWindowSize, rememberWin.Checked)
 		if rememberWin.Checked && parent != nil {
 			saveMainWindowGeometryIfEnabled(a, parent)

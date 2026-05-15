@@ -80,12 +80,16 @@ type diffView struct {
 	leftT  string
 	rightT string
 
-	leftTitle  *widget.Label
-	rightTitle *widget.Label
-	leftList   *widget.List
-	rightList  *widget.List
-	leftCol    fyne.CanvasObject
-	rightCol   fyne.CanvasObject
+	leftTitle    *widget.Label
+	rightTitle   *widget.Label
+	leftSubject  string // optional pane subtitle (e.g. commit subject from history)
+	rightSubject string
+	leftSubjLbl  *widget.Label
+	rightSubjLbl *widget.Label
+	leftList     *widget.List
+	rightList    *widget.List
+	leftCol      fyne.CanvasObject
+	rightCol     fyne.CanvasObject
 
 	syncSel    bool
 	changeSlot int
@@ -110,6 +114,15 @@ type diffView struct {
 	// can keep the read-only state attached to the correct content.
 	leftReadOnly  bool
 	rightReadOnly bool
+
+	// secondary is true when this diff view is hosted as a child of another
+	// window (the explorer master). On macOS the menu bar is global — every
+	// SetMainMenu call replaces the app-wide menu — so secondary windows
+	// MUST NOT install their own menu, or the explorer's menu vanishes the
+	// first time a diff window opens and stays gone after it closes. The
+	// diff window's controls remain reachable via the toolbar, right-click
+	// row menu, and keyboard shortcuts.
+	secondary bool
 
 	btnSaveLeft, btnSaveRight, btnSaveBoth *ttwidget.Button
 	btnUndo, btnRedo                       *ttwidget.Button
@@ -225,6 +238,25 @@ func (v *diffView) refreshTitles() {
 	}
 	v.leftTitle.SetText(lp)
 	v.rightTitle.SetText(rp)
+
+	// Per-side subtitle: shown when non-empty, hidden otherwise. Wrapped in
+	// nil-checks so we don't panic before buildUI has run.
+	if v.leftSubjLbl != nil {
+		if v.leftSubject != "" {
+			v.leftSubjLbl.SetText(v.leftSubject)
+			v.leftSubjLbl.Show()
+		} else {
+			v.leftSubjLbl.Hide()
+		}
+	}
+	if v.rightSubjLbl != nil {
+		if v.rightSubject != "" {
+			v.rightSubjLbl.SetText(v.rightSubject)
+			v.rightSubjLbl.Show()
+		} else {
+			v.rightSubjLbl.Hide()
+		}
+	}
 }
 
 // diffLineCellMinHeight is the list row height: glyph box for monospace text plus padding.
@@ -982,6 +1014,16 @@ func (v *diffView) buildUI() fyne.CanvasObject {
 	hintL.TextStyle = fyne.TextStyle{Italic: true}
 	hintR.TextStyle = fyne.TextStyle{Italic: true}
 
+	// Optional per-side subtitle: e.g. the commit message subject when this
+	// diff was opened from Repo History. Hidden when empty so non-history
+	// diffs (Compare Two Files…, Diff vs HEAD) don't carry an empty row.
+	v.leftSubjLbl = widget.NewLabel("")
+	v.rightSubjLbl = widget.NewLabel("")
+	v.leftSubjLbl.Truncation = fyne.TextTruncateEllipsis
+	v.rightSubjLbl.Truncation = fyne.TextTruncateEllipsis
+	v.leftSubjLbl.Wrapping = fyne.TextWrapOff
+	v.rightSubjLbl.Wrapping = fyne.TextWrapOff
+
 	v.leftList = widget.NewList(
 		func() int {
 			if v.model == nil {
@@ -1006,8 +1048,8 @@ func (v *diffView) buildUI() fyne.CanvasObject {
 	v.leftList.OnSelected = func(id widget.ListItemID) { v.syncFrom(v.leftList, v.rightList, id) }
 	v.rightList.OnSelected = func(id widget.ListItemID) { v.syncFrom(v.rightList, v.leftList, id) }
 
-	leftHead := container.NewVBox(v.buildToolbar(0), v.leftTitle, hintL)
-	rightHead := container.NewVBox(v.buildToolbar(1), v.rightTitle, hintR)
+	leftHead := container.NewVBox(v.buildToolbar(0), v.leftTitle, v.leftSubjLbl, hintL)
+	rightHead := container.NewVBox(v.buildToolbar(1), v.rightTitle, v.rightSubjLbl, hintR)
 
 	leftScroll := container.NewScroll(v.leftList)
 	rightScroll := container.NewScroll(v.rightList)
@@ -1082,19 +1124,73 @@ func (v *diffView) registerMainCanvasShortcuts(c fyne.Canvas) {
 	})
 }
 
+// secondaryDiffWindows tracks all currently-shown diff windows opened as
+// children of the explorer (Compare Two Files…, Diff against HEAD, history
+// file-diff). Used to enforce the "keep only one diff window at a time"
+// preference without losing in-flight edits.
+var secondaryDiffWindows []*diffView
+
+func registerSecondaryDiff(v *diffView) {
+	if v == nil || !v.secondary {
+		return
+	}
+	secondaryDiffWindows = append(secondaryDiffWindows, v)
+}
+
+func unregisterSecondaryDiff(v *diffView) {
+	if v == nil {
+		return
+	}
+	out := secondaryDiffWindows[:0]
+	for _, x := range secondaryDiffWindows {
+		if x != v {
+			out = append(out, x)
+		}
+	}
+	secondaryDiffWindows = out
+}
+
+// closeOtherSecondaryDiffs hides every registered secondary diff window
+// except `except`. Diff windows with unsaved edits (leftDirty || rightDirty)
+// are skipped so the user never silently loses work; the new window opens
+// anyway, so single-window mode is best-effort, not absolute.
+func closeOtherSecondaryDiffs(except *diffView) {
+	for _, x := range append([]*diffView(nil), secondaryDiffWindows...) {
+		if x == except || x == nil || x.win == nil {
+			continue
+		}
+		if x.leftDirty || x.rightDirty {
+			continue
+		}
+		if x.flyoutPop != nil {
+			fynetooltip.DestroyPopUpToolTipLayer(x.flyoutPop)
+			x.flyoutPop = nil
+		}
+		fynetooltip.DestroyWindowToolTipLayer(x.win.Canvas())
+		unregisterSecondaryDiff(x)
+		windowHide(x.win)
+	}
+}
+
 // openDiffWindow builds the two-pane diff GUI as a window on the given app.
 // When master is true, the window owns the app lifecycle (close = quit) and
 // installs the system tray. When false, the window is secondary (close = hide)
 // and the tray is left alone — the caller (explorer) owns it.
 func openDiffWindow(a fyne.App, master bool) *diffView {
-	return openDiffWindowWithPreload(a, master, "", "", "", "", false)
+	return openDiffWindowWithPreload(a, master, "", "", "", "", "", "", false, false)
 }
 
-// openDiffWindowWithPreload is openDiffWindow plus pre-filled content and an
-// optional read-only-left mode. Used by the explorer's "Diff against HEAD"
-// flow to load the HEAD blob into the left pane (read-only) and the worktree
-// file into the right pane (editable).
-func openDiffWindowWithPreload(a fyne.App, master bool, leftP, leftT, rightP, rightT string, leftReadOnly bool) *diffView {
+// openDiffWindowWithPreload is openDiffWindow plus pre-filled content and
+// optional per-side read-only modes. Used by:
+//   - the explorer's "Diff against HEAD" flow (leftReadOnly=true), which
+//     loads the HEAD blob on the left and the worktree file on the right;
+//   - the repo-history view (leftReadOnly=true, rightReadOnly=true), where
+//     both sides are immutable commit blobs.
+//
+// leftSubject / rightSubject are optional pane subtitles (e.g. a commit
+// message subject) rendered between the title and the drop-hint. Empty
+// strings hide the subtitle row so non-history callers don't waste space.
+func openDiffWindowWithPreload(a fyne.App, master bool, leftP, leftT, rightP, rightT, leftSubject, rightSubject string, leftReadOnly, rightReadOnly bool) *diffView {
 	v := &diffView{
 		app:             a,
 		showLineNumbers: a.Preferences().BoolWithFallback(prefShowLineNumbers, false),
@@ -1104,13 +1200,20 @@ func openDiffWindowWithPreload(a fyne.App, master bool, leftP, leftT, rightP, ri
 		leftT:           leftT,
 		rightP:          rightP,
 		rightT:          rightT,
+		leftSubject:     leftSubject,
+		rightSubject:    rightSubject,
 		leftReadOnly:    leftReadOnly,
+		rightReadOnly:   rightReadOnly,
+		secondary:       !master,
 	}
 	title := appName + " — Diff"
 	if master {
 		title = appName
 	}
-	if leftReadOnly {
+	switch {
+	case leftReadOnly && rightReadOnly:
+		title = appName + " — Historical Diff"
+	case leftReadOnly:
 		title = appName + " — Diff vs HEAD"
 	}
 	w := a.NewWindow(title)
@@ -1138,8 +1241,19 @@ func openDiffWindowWithPreload(a fyne.App, master bool, leftP, leftT, rightP, ri
 				v.flyoutPop = nil
 			}
 			fynetooltip.DestroyWindowToolTipLayer(w.Canvas())
+			unregisterSecondaryDiff(v)
 			windowHide(w)
 		})
+	}
+
+	if v.secondary {
+		if a.Preferences().BoolWithFallback(prefSingleDiffWindow, true) {
+			// Close any prior secondary diff windows so the user doesn't end
+			// up with a screen full of stale comparisons. Done before we
+			// register the new view so we never close ourselves.
+			closeOtherSecondaryDiffs(v)
+		}
+		registerSecondaryDiff(v)
 	}
 
 	windowShow(w)

@@ -46,9 +46,10 @@ type explorerView struct {
 	tree        *widget.Tree
 	contentArea *fyne.Container
 
-	modeBtn   *ttwidget.Button
-	upBtn     *ttwidget.Button
-	reloadBtn *ttwidget.Button
+	modeBtn    *ttwidget.Button
+	upBtn      *ttwidget.Button
+	reloadBtn  *ttwidget.Button
+	historyBtn *ttwidget.Button
 
 	// contextPop is the active row context-menu popup, kept so we can tear
 	// down its tooltip layer before opening a new one.
@@ -149,7 +150,12 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.modeBtn.Importance = widget.LowImportance
 	v.modeBtn.Disable()
 
-	toolRow := container.NewHBox(browseBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn)
+	v.historyBtn = ttwidget.NewButtonWithIcon("History", theme.HistoryIcon(), func() { v.openHistory() })
+	v.historyBtn.SetToolTip("Open the repo history window — commits + per-file diff against the parent commit")
+	v.historyBtn.Importance = widget.LowImportance
+	v.historyBtn.Disable()
+
+	toolRow := container.NewHBox(browseBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn, v.historyBtn)
 
 	headerLabels := buildExplorerHeaderRow()
 	v.list = v.buildList()
@@ -476,10 +482,12 @@ func (v *explorerView) refresh() {
 			}
 		}
 		v.modeBtn.Enable()
+		v.historyBtn.Enable()
 	} else {
 		v.branchLabel.SetText("(not a git repository)")
 		v.statusLabel.SetText("")
 		v.modeBtn.Disable()
+		v.historyBtn.Disable()
 	}
 
 	if v.list != nil {
@@ -683,12 +691,14 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 
 	toggleView := fyne.NewMenuItem("Toggle Tracked Files / Folder View", func() { v.toggleMode() })
 	legend := fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() })
+	history := fyne.NewMenuItem("Repo History…", func() { v.openHistory() })
 
 	view := fyne.NewMenu("View",
 		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItem("Hide All Windows", func() { hideAllAppWindows(v.app) }),
 		fyne.NewMenuItemSeparator(),
 		toggleView,
+		history,
 		legend,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Light Theme", func() { setLightTheme(v.app) }),
@@ -703,6 +713,19 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	)
 
 	return fyne.NewMainMenu(file, view, help)
+}
+
+// openHistory pops a secondary window with the current repo's commit log and
+// a per-commit detail pane. Requires the explorer to be inside a git repo;
+// shows an informational dialog otherwise.
+func (v *explorerView) openHistory() {
+	if v.repo == nil || v.repoRoot == "" {
+		dialog.ShowInformation("No repository",
+			"Open a folder that is inside a git repository first, then try again.",
+			v.win)
+		return
+	}
+	openHistoryWindow(v.app, v.repo, v.repoRoot, v.win)
 }
 
 func (v *explorerView) showStatusLegend() {
@@ -746,6 +769,8 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		fyne.NewMenuItem("Hide All Windows", func() { hideAllAppWindows(v.app) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Open Folder…", func() { v.browseFolder() }),
+		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
+		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
 		fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) }),
 		fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, nil) }),
 		fyne.NewMenuItemSeparator(),
