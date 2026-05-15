@@ -13,6 +13,7 @@ const (
 	prefShowLineNumbers    = "showLineNumbers"
 	prefShowWhitespace     = "showWhitespace"
 	prefSyncScroll         = "syncScroll"
+	prefSingleDiffWindow   = "singleDiffWindow"
 	prefRememberWindowSize = "rememberWindowSize"
 	prefWindowWidth        = "windowWidth"
 	prefWindowHeight       = "windowHeight"

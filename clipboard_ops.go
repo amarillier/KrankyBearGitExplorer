@@ -89,8 +89,10 @@ func (v *diffView) swapSides() {
 	v.leftT, v.rightT = v.rightT, v.leftT
 	v.leftDirty, v.rightDirty = v.rightDirty, v.leftDirty
 	// Read-only follows the content across the swap so the HEAD buffer stays
-	// protected on whichever side it now lives.
+	// protected on whichever side it now lives. Subjects swap too so the
+	// commit-message subtitle stays attached to the right blob.
 	v.leftReadOnly, v.rightReadOnly = v.rightReadOnly, v.leftReadOnly
+	v.leftSubject, v.rightSubject = v.rightSubject, v.leftSubject
 	v.recompute()
 	if v.syncScrollOn && v.leftList != nil && v.rightList != nil {
 		v.syncScrollPrevL = v.leftList.GetScrollOffset()

@@ -350,8 +350,13 @@ func (v *diffView) buildTrayMenu() *fyne.Menu {
 	)
 }
 
-// refreshMainMenu rebuilds only the window menu bar (safe to call often).
+// refreshMainMenu rebuilds the window menu bar after diff operations. On a
+// secondary diff window this is a no-op — the explorer owns the app-wide
+// menu and the diff's controls live on the toolbar / right-click / keyboard.
 func (v *diffView) refreshMainMenu() {
+	if v.secondary {
+		return
+	}
 	fyne.Do(func() {
 		if v.win == nil {
 			return
@@ -360,15 +365,19 @@ func (v *diffView) refreshMainMenu() {
 	})
 }
 
-// setupMenus installs the menu bar and (when setTray is true) the system tray
-// once after the main window is shown. The explorer view owns the tray when
-// the diff window is opened as a secondary window, so it passes false here.
+// setupMenus installs the menu bar and (when setTray is true) the system
+// tray. On a secondary diff window the menu install is skipped entirely so
+// the explorer's menu remains in place across the diff window's lifetime
+// (avoids the "menu bar stuck on diff items after closing the diff window"
+// behaviour on macOS, where SetMainMenu replaces the global NSApp menu).
 func (v *diffView) setupMenus(setTray bool) {
 	fyne.Do(func() {
 		if v.win == nil {
 			return
 		}
-		v.win.SetMainMenu(v.buildMainMenu())
+		if !v.secondary {
+			v.win.SetMainMenu(v.buildMainMenu())
+		}
 		if setTray {
 			if desk, ok := v.app.(desktop.App); ok {
 				desk.SetSystemTrayMenu(v.buildTrayMenu())

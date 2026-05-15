@@ -298,5 +298,10 @@ func (v *explorerView) diffAgainstHEAD(rel, absPath string) {
 		shortSha = shortSha[:7]
 	}
 	leftLabel := fmt.Sprintf("HEAD@%s: %s", shortSha, rel)
-	openDiffWindowWithPreload(v.app, false, leftLabel, headContent, absPath, string(workBytes), true /* leftReadOnly */)
+	openDiffWindowWithPreload(v.app, false,
+		leftLabel, headContent, absPath, string(workBytes),
+		"", "", // no per-side subtitles for HEAD-vs-worktree
+		true,  // leftReadOnly — HEAD side is immutable
+		false, // rightReadOnly — worktree side is editable
+	)
 }
