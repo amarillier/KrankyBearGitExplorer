@@ -37,12 +37,52 @@ type repoTreeModel struct {
 	// an unrelated plain directory before you click into it.
 	submoduleAncestors map[string]struct{}
 
+	// dirRollup aggregates non-clean child counts for every ancestor
+	// directory of a non-clean file. Used to label folder rows with a
+	// rolled-up status like "modified (5)" and to keep "Only dirty /
+	// Only untracked" filters useful for directories — previously dirs
+	// always passed the status gate because they had no status of their
+	// own. Ignored files are not enumerated by go-git's Status() and are
+	// deliberately omitted from the rollup; auditing ignored content is
+	// already handled at the file level via the gitignore matcher.
+	dirRollup map[string]rollupCounts
+
 	// visible, when non-nil, restricts childIDs to the IDs in this set. Used
 	// by the explorer's filter bar to hide rows that don't match the active
 	// name / status filters. A path being present means "this node should be
 	// shown" — ancestors of every visible leaf are also added so the tree
 	// remains navigable.
 	visible map[string]struct{}
+}
+
+// rollupCounts summarises the non-clean children under a directory.
+// conflict + dirty + untracked == total non-clean files (excluding ignored).
+type rollupCounts struct {
+	conflict  int
+	dirty     int // modified / staged / deleted / type-changed / renamed / etc.
+	untracked int
+}
+
+// total returns conflict + dirty + untracked.
+func (rc rollupCounts) total() int { return rc.conflict + rc.dirty + rc.untracked }
+
+// label renders the rollup as a Status-column string. Empty when nothing
+// non-clean is rolled up. Severity precedence: conflict > modified > untracked.
+// The count is total non-clean files in the subtree, not just the headline
+// category — so "modified (5)" can mean 3 modified + 2 untracked.
+func (rc rollupCounts) label() string {
+	total := rc.total()
+	if total == 0 {
+		return ""
+	}
+	severity := "untracked"
+	switch {
+	case rc.conflict > 0:
+		severity = "conflict"
+	case rc.dirty > 0:
+		severity = "modified"
+	}
+	return fmt.Sprintf("%s (%d)", severity, total)
 }
 
 // explorerFilter captures the active filter state shared between the folder
@@ -62,6 +102,7 @@ func newRepoTreeModel() *repoTreeModel {
 		fileStatus:         make(map[string]string),
 		submodules:         make(map[string]struct{}),
 		submoduleAncestors: make(map[string]struct{}),
+		dirRollup:          make(map[string]rollupCounts),
 	}
 }
 
@@ -110,6 +151,34 @@ func buildRepoTreeModel(repoRoot string) (*repoTreeModel, *git.Repository, error
 		p := filepath.ToSlash(path)
 		m.registerPath(p)
 		m.fileStatus[p] = formatStatus(fs)
+	}
+
+	// Roll up non-clean child counts onto every ancestor directory. Walked
+	// after fileStatus is fully populated so each leaf is classified once.
+	for p, raw := range m.fileStatus {
+		var bump func(rc *rollupCounts)
+		switch {
+		case humanStatusLabel(raw) == "conflict":
+			bump = func(rc *rollupCounts) { rc.conflict++ }
+		case humanStatusLabel(raw) == "untracked":
+			bump = func(rc *rollupCounts) { rc.untracked++ }
+		case isDirtyStatus(humanStatusLabel(raw)):
+			bump = func(rc *rollupCounts) { rc.dirty++ }
+		}
+		if bump == nil {
+			continue
+		}
+		cur := p
+		for {
+			idx := strings.LastIndex(cur, "/")
+			if idx < 0 {
+				break
+			}
+			cur = cur[:idx]
+			rc := m.dirRollup[cur]
+			bump(&rc)
+			m.dirRollup[cur] = rc
+		}
 	}
 
 	if patterns, err := gitignore.ReadPatterns(wt.Filesystem, nil); err == nil {

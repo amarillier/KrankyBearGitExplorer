@@ -68,6 +68,12 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 	inRepo := v.repo != nil && v.repoRoot != "" && e.rel != ""
 	tracked := inRepo && isTrackedStatus(e.status)
 	canDiffHEAD := tracked && !e.isDir && !strings.HasPrefix(e.status, "A") && e.status != "??"
+	untracked := inRepo && e.status == "??" && !e.isDir
+	ignored := inRepo && e.status == "!!" && !e.isDir
+	canGitAdd := untracked
+	canIgnore := untracked
+	canUnignore := ignored
+	canDeleteDisk := (untracked || ignored) && !e.isDir
 
 	reveal := fyne.NewMenuItem("Reveal in "+osFileManagerLabel(), func() {
 		v.revealInOS(absPath)
@@ -85,6 +91,28 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 	})
 	diffHEAD.Disabled = !canDiffHEAD
 
+	showHistory := fyne.NewMenuItem("Show history for this file…", func() {
+		v.showFileHistory(e.rel)
+	})
+	// Same enable condition as Diff vs HEAD: the file must be tracked and
+	// already committed (an "added (staged)" file has no commits yet).
+	showHistory.Disabled = !canDiffHEAD
+
+	gitAdd := fyne.NewMenuItem("git add (start tracking)…", func() {
+		v.gitAdd(e.name, e.rel)
+	})
+	gitAdd.Disabled = !canGitAdd
+
+	addIgnore := fyne.NewMenuItem("Add to .gitignore…", func() {
+		v.addToGitignore(e.name, e.rel)
+	})
+	addIgnore.Disabled = !canIgnore
+
+	unignore := fyne.NewMenuItem("Un-ignore (allow tracking)…", func() {
+		v.unignoreFile(e.name, e.rel)
+	})
+	unignore.Disabled = !canUnignore
+
 	gitRm := fyne.NewMenuItem("git rm -f (remove from worktree + index)…", func() {
 		v.gitRmForce(e.name, e.rel, absPath)
 	})
@@ -95,15 +123,26 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 	})
 	gitRmCached.Disabled = !tracked || e.isDir
 
+	deleteDisk := fyne.NewMenuItem("Delete from disk…", func() {
+		v.deleteFromDisk(e.name, absPath)
+	})
+	deleteDisk.Disabled = !canDeleteDisk
+
 	items := []*fyne.MenuItem{
 		reveal,
 		copyPath,
 		openEditor,
 		fyne.NewMenuItemSeparator(),
 		diffHEAD,
+		showHistory,
+		fyne.NewMenuItemSeparator(),
+		gitAdd,
+		addIgnore,
+		unignore,
 		fyne.NewMenuItemSeparator(),
 		gitRm,
 		gitRmCached,
+		deleteDisk,
 	}
 	menu := fyne.NewMenu("", items...)
 
@@ -247,6 +286,161 @@ func (v *explorerView) gitRmCached(displayName, rel string) {
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("git rm --cached: %w\n%s", err, strings.TrimSpace(string(out))), v.win)
+			return
+		}
+		v.refresh()
+	}, v.win)
+}
+
+// gitAdd stages an untracked file via go-git's worktree.Add, the same as
+// `git add <path>` on the CLI. After staging the file shows up as
+// "added (staged)" in the next refresh.
+func (v *explorerView) gitAdd(displayName, rel string) {
+	if v.repo == nil {
+		return
+	}
+	msg := fmt.Sprintf("Stage %q for the next commit (git add)?", displayName)
+	dialog.ShowConfirm("git add", msg, func(ok bool) {
+		if !ok {
+			return
+		}
+		wt, err := v.repo.Worktree()
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("worktree: %w", err), v.win)
+			return
+		}
+		if _, err := wt.Add(rel); err != nil {
+			dialog.ShowError(fmt.Errorf("git add: %w", err), v.win)
+			return
+		}
+		v.refresh()
+	}, v.win)
+}
+
+// addToGitignore appends an anchored entry for the given repo-relative path
+// to the repo's root .gitignore. Anchored (leading slash) so the entry
+// matches exactly that path, not every file of that name anywhere in the
+// tree. Creates .gitignore if it doesn't exist yet. Leaves a leading
+// newline only when the existing file doesn't already end on one — small
+// quality-of-life so the appended line lands on its own row.
+func (v *explorerView) addToGitignore(displayName, rel string) {
+	if v.repoRoot == "" || rel == "" {
+		return
+	}
+	entry := "/" + filepath.ToSlash(rel)
+	msg := fmt.Sprintf("Add %q to .gitignore?\n\nWritten as a leading-slash entry (%s) so it matches only this exact path, not every file with the same name elsewhere in the repo.", displayName, entry)
+	dialog.ShowConfirm("Add to .gitignore", msg, func(ok bool) {
+		if !ok {
+			return
+		}
+		path := filepath.Join(v.repoRoot, ".gitignore")
+		existing, _ := os.ReadFile(path)
+		var line string
+		switch {
+		case len(existing) == 0:
+			line = entry + "\n"
+		case existing[len(existing)-1] == '\n':
+			line = entry + "\n"
+		default:
+			line = "\n" + entry + "\n"
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("open .gitignore: %w", err), v.win)
+			return
+		}
+		defer f.Close()
+		if _, err := f.WriteString(line); err != nil {
+			dialog.ShowError(fmt.Errorf("write .gitignore: %w", err), v.win)
+			return
+		}
+		v.refresh()
+	}, v.win)
+}
+
+// unignoreFile flips an ignored file back to visible-to-git. Two paths:
+//
+//   - If .gitignore has an exact-match line for the file (either anchored
+//     "/rel/path" or unanchored "rel/path"), that line is removed. Cleanest
+//     undo when the file was added to .gitignore via "Add to .gitignore…"
+//     in this same menu.
+//   - Otherwise the file is ignored by a broader pattern (e.g. `*.zzz`,
+//     `bin/*`, a parent dir's .gitignore). Removing the broader pattern
+//     would un-ignore other files too, so instead an anchored negation
+//     entry "!/rel/path" is appended. That exempts just this one file
+//     without disturbing the existing pattern.
+//
+// The confirm dialog tells the user which path will be taken so the
+// .gitignore edit isn't surprising.
+func (v *explorerView) unignoreFile(displayName, rel string) {
+	if v.repoRoot == "" || rel == "" {
+		return
+	}
+	slashRel := filepath.ToSlash(rel)
+	anchored := "/" + slashRel
+	path := filepath.Join(v.repoRoot, ".gitignore")
+
+	existing, _ := os.ReadFile(path) // missing file is fine — empty content
+
+	// Look for an exact-match line first so we know which branch the
+	// confirm dialog should describe.
+	lines := strings.Split(string(existing), "\n")
+	matchIdx := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == anchored || trimmed == slashRel {
+			matchIdx = i
+			break
+		}
+	}
+
+	var msg string
+	if matchIdx >= 0 {
+		msg = fmt.Sprintf("Un-ignore %q?\n\nFound an exact-match line in .gitignore (%q) — it will be removed.", displayName, strings.TrimSpace(lines[matchIdx]))
+	} else {
+		msg = fmt.Sprintf("Un-ignore %q?\n\nNo exact-match line in .gitignore — the file is ignored by a broader pattern. A negation entry (%q) will be appended to .gitignore, exempting this file without disturbing the broader pattern.", displayName, "!"+anchored)
+	}
+
+	dialog.ShowConfirm("Un-ignore", msg, func(ok bool) {
+		if !ok {
+			return
+		}
+		var newContent string
+		if matchIdx >= 0 {
+			kept := append(lines[:matchIdx:matchIdx], lines[matchIdx+1:]...)
+			newContent = strings.Join(kept, "\n")
+		} else {
+			content := string(existing)
+			negation := "!" + anchored
+			switch {
+			case len(content) == 0:
+				newContent = negation + "\n"
+			case content[len(content)-1] == '\n':
+				newContent = content + negation + "\n"
+			default:
+				newContent = content + "\n" + negation + "\n"
+			}
+		}
+		if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
+			dialog.ShowError(fmt.Errorf("write .gitignore: %w", err), v.win)
+			return
+		}
+		v.refresh()
+	}, v.win)
+}
+
+// deleteFromDisk removes a file from the working tree via os.Remove. Only
+// offered for untracked or ignored files (tracked files have git rm); only
+// for files, not directories. Destructive — wording in the confirm makes
+// that explicit.
+func (v *explorerView) deleteFromDisk(displayName, absPath string) {
+	msg := fmt.Sprintf("Delete %q from disk?\n\nThis removes the file from the filesystem. It is not staged in git (the file is untracked or ignored, so there's nothing for git to stage). The deletion cannot be undone from the explorer.", displayName)
+	dialog.ShowConfirm("Delete from disk", msg, func(ok bool) {
+		if !ok {
+			return
+		}
+		if err := os.Remove(absPath); err != nil {
+			dialog.ShowError(fmt.Errorf("delete %s: %w", absPath, err), v.win)
 			return
 		}
 		v.refresh()
