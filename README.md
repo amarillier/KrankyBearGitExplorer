@@ -11,10 +11,26 @@ The two-pane side-by-side diff tool [KrankyBearDiff](https://github.com/amarilli
 ### Folder view
 
 - Open a folder by file picker, drag-and-drop, or keyboard (Cmd/Ctrl+O).
-- Recent folders — File → Open Recent Folder lists up to the 10 most recently-opened paths (file picker + drag-and-drop both feed it). Stale paths drop out automatically.
+- Recent folders — File → Open Recent Folder lists up to the 10 most recently-opened paths (file picker + drag-and-drop both feed it). Stale paths drop out automatically. The **Recent ▾** toolbar button next to Open Folder pops up the same list inline, one click away.
 - Per-entry **Name · Size · Modified · Status** columns. Directories first, alphabetical.
+- Filter bar above the list — see [Filter bar](#filter-bar) below.
 - The `.git` directory is hidden from the folder list by default — use the **Tracked files** toolbar button (or View → Toggle Tracked Files / Folder View) to inspect what git is tracking. Preferences → "Show .git in folder listings" puts it back in the list for users who want to drill into git's internals.
+- Submodule indicator — directories declared in `.gitmodules` show **submodule** in the Status column; ancestor wrapper folders (e.g. `vendor/`) show **contains submodule** so they read distinctly from unrelated plain directories. Clicking a submodule descends into it as its own repo and adds the path to your recent folders.
 - Repo header shows current path, branch name, and clean / dirty+untracked file counts when inside a repo, plus the last commit's subject, author, and relative time (italicised) — "(no commits)" for a freshly-init'd repo.
+
+### Filter bar
+
+A single compact row above the list — applies to both the folder view and the tracked-files tree.
+
+- **Filter by name…** — case-insensitive substring match on the file's short name. In the tracked-files tree, a directory whose name matches pulls in all its descendants so you can drill in.
+- **Only dirty** — restrict files to those with changes vs HEAD (modified / staged / deleted / conflict).
+- **Only untracked** — restrict files to those not yet tracked by git.
+- **Only ignored** — restrict files to those excluded by `.gitignore`. Useful for auditing what's being filtered out; implicitly bypasses the "Show ignored" gate so a single tick collapses the view to just the ignored set.
+- **Show ignored** — include ignored entries alongside everything else. Off by default; ignored files and ignored directories (e.g. `node_modules/`, `bin/`, `dist/`) are hidden until you opt in.
+
+The three "Only" toggles combine as an OR-union (e.g. ticking dirty + ignored shows both classes side-by-side). Directories and the `.git` pinned row always pass the status gate so navigation stays unbroken; the name filter still applies to them. Filters reset on folder change so each project starts from a clean slate.
+
+Behind the scenes, the folder view consults the repo's `.gitignore` chain via go-git's gitignore matcher — go-git's `Status()` omits ignored files by default (matching the `git status` CLI), so without this "Only ignored" would match zero files.
 
 ### Tracked-files view
 
@@ -49,6 +65,7 @@ Edits flow only from HEAD → worktree (via the existing "Apply left to right" m
 View → Repo History… (or the **History** toolbar button) opens a secondary window:
 
 - **Left pane** — commit list, 200 at a time. Each row shows the commit subject, short SHA, author, and relative time. "Load more commits" appends the next 200.
+- **Search across history** — two filter fields above the commit list: "Message contains…" and "Author contains…", both case-insensitive substring. First time you type a query, the iterator drains the full repo log so matching is across all commits, not just the loaded page. The header switches from "N commits loaded" to "N of M commits match" so you can see how aggressive the filter is. Typing is debounced ~150ms; clear both fields to return to the unfiltered list.
 - **Right pane** — per-commit detail: full author / email / timestamp, wrapped commit message, and the list of files changed vs the commit's parent with A/M/D action codes.
 - Click a changed file → opens the existing two-pane diff in **Historical Diff** mode: both sides read-only, parent blob on the left, this commit's blob on the right. Pane titles include short SHA + ISO date and the commit subject, so parallel comparison windows stay self-identifying.
 - Binary blobs (NUL byte in the first 8 KB) get a friendly dialog instead of garbage output.
@@ -97,6 +114,16 @@ File → Preferences… (from either window) opens a single dialog:
 - **Hide All Windows** snapshots which windows are currently visible and hides exactly those.
 - **Show All Windows** restores exactly that snapshot — dialogs you'd already dismissed stay dismissed.
 
+### Cross-repo switch prompt
+
+When you're about to switch the explorer to a different repo (or out of a repo entirely) while repo-bound secondary windows are still open, a modal dialog lists those windows by title and asks what to do:
+
+- **Close them and continue** (default) — fires `Close()` on every registered window so they tear down cleanly via their own intercepts.
+- **Keep them open and continue** — proceeds with the switch; you knowingly accept the mixed-repo state.
+- **Cancel** — abandons the switch; the explorer stays where it is.
+
+Tracked as repo-bound: **Repo History**, **Diff vs HEAD**, **Historical Diff**. Compare Two Files… is deliberately excluded (it's repo-independent). Navigating within the same repo (clicking subdirs, Up, etc.) doesn't trigger the prompt — only crossing a repo-root boundary does.
+
 ### Cross-platform
 
 - macOS 10.13+, Windows 10+, Linux (X11 or Wayland; tested on GNOME, KDE, XFCE, Cinnamon, MATE).
@@ -104,11 +131,11 @@ File → Preferences… (from either window) opens a single dialog:
 
 ## Status
 
-This is an active rebuild on top of [KrankyBearDiff](https://github.com/amarillier/KrankyBearDiff). The diff engine is intact and reachable from the File menu, the "Diff against HEAD" action, and the new Repo History view. Current release: **v0.3.0** — see [ReleaseNotes.txt](ReleaseNotes.txt) for what landed.
+This is an active rebuild on top of [KrankyBearDiff](https://github.com/amarillier/KrankyBearDiff). The diff engine is intact and reachable from the File menu, the "Diff against HEAD" action, and the Repo History view. Current release: **v0.4.0** — see [ReleaseNotes.txt](ReleaseNotes.txt) for what landed.
 
-### Known gaps as of v0.3.0
+### Known gaps as of v0.4.0
 
-- Directory rows don't roll up the status of their children (a folder containing a modified file shows blank in Status).
+- Directory rows don't roll up the status of their children (a folder containing a modified file shows blank in Status; the "Only dirty" filter still navigates fine because directories always pass the status gate).
 - No auto-refresh — click Refresh (Cmd/Ctrl+R) or use the toolbar reload after external changes.
 - `git rm --cached` shells out to the `git` CLI (`git -C <repo> rm --cached`); requires `git` on `PATH`.
 - The Diff against HEAD and Historical Diff views are read-only at the data-mutation level — the per-pane Browse / Recent / Reload buttons on the read-only side are present but no-op; a future polish pass will hide them.

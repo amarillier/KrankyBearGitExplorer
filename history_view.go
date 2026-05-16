@@ -5,6 +5,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -34,7 +35,8 @@ type historyView struct {
 	repoRoot string
 
 	commitIter     object.CommitIter // streaming source for "Load more"
-	commits        []*object.Commit
+	allCommits     []*object.Commit  // master list, grows as iter yields
+	commits        []*object.Commit  // displayed subset (== allCommits when no filter)
 	selectedCommit *object.Commit
 	changes        object.Changes
 
@@ -45,6 +47,15 @@ type historyView struct {
 	hintLabel     *widget.Label
 	loadMoreBtn   *ttwidget.Button
 	commitCountLb *widget.Label
+
+	// Search-across-history filter. First activation drains the iterator so
+	// matching is against the full repo log, not just the loaded page.
+	msgEntry    *widget.Entry
+	authEntry   *widget.Entry
+	msgFilter   string // lowercased substring against full commit message
+	authFilter  string // lowercased substring against author name
+	filterTimer *time.Timer
+	filterMu    sync.Mutex
 }
 
 func openHistoryWindow(a fyne.App, repo *git.Repository, repoRoot string, parent fyne.Window) *historyView {
@@ -70,39 +81,115 @@ func openHistoryWindow(a fyne.App, repo *git.Repository, repoRoot string, parent
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(container.NewPadded(v.buildUI()), w.Canvas()))
 	w.Resize(fyne.NewSize(1000, 700))
 	w.SetCloseIntercept(func() {
+		v.filterMu.Lock()
+		if v.filterTimer != nil {
+			v.filterTimer.Stop()
+			v.filterTimer = nil
+		}
+		v.filterMu.Unlock()
 		if v.commitIter != nil {
 			v.commitIter.Close()
 			v.commitIter = nil
 		}
+		unregisterRepoChildWindow(w)
 		fynetooltip.DestroyWindowToolTipLayer(w.Canvas())
 		windowHide(w)
 	})
+	registerRepoChildWindow(w)
 	windowShow(w)
 	v.refreshHeader()
 	return v
 }
 
-// loadMoreCommits pulls up to n more commits from the iterator. When the
-// iterator is exhausted, it's closed and nilled so the "Load more" button
-// can hide itself.
+// loadMoreCommits pulls up to n more commits from the iterator into
+// v.allCommits, then re-applies the active filter so v.commits stays in sync.
+// When the iterator is exhausted, it's closed and nilled so the "Load more"
+// button can disable itself.
 func (v *historyView) loadMoreCommits(n int) {
 	if v.commitIter == nil {
+		v.applyFilter()
 		return
 	}
 	for i := 0; i < n; i++ {
 		c, err := v.commitIter.Next()
-		if err == io.EOF {
+		if err != nil { // includes io.EOF
 			v.commitIter.Close()
 			v.commitIter = nil
-			return
+			break
 		}
-		if err != nil {
-			v.commitIter.Close()
-			v.commitIter = nil
-			return
-		}
-		v.commits = append(v.commits, c)
+		v.allCommits = append(v.allCommits, c)
 	}
+	v.applyFilter()
+}
+
+// loadAllCommits drains the iterator to completion. Used on first activation
+// of the search filter so the filter sees the full repo log, not just the
+// currently-loaded page.
+func (v *historyView) loadAllCommits() {
+	if v.commitIter == nil {
+		return
+	}
+	for {
+		c, err := v.commitIter.Next()
+		if err != nil { // includes io.EOF
+			v.commitIter.Close()
+			v.commitIter = nil
+			return
+		}
+		v.allCommits = append(v.allCommits, c)
+	}
+}
+
+// applyFilter rebuilds v.commits from v.allCommits + the active filter state
+// and refreshes the dependent widgets. When no filter is active, v.commits
+// shares allCommits' backing array — cheap.
+func (v *historyView) applyFilter() {
+	if v.msgFilter == "" && v.authFilter == "" {
+		v.commits = v.allCommits
+	} else {
+		out := make([]*object.Commit, 0, len(v.allCommits))
+		for _, c := range v.allCommits {
+			if v.msgFilter != "" && !strings.Contains(strings.ToLower(c.Message), v.msgFilter) {
+				continue
+			}
+			if v.authFilter != "" && !strings.Contains(strings.ToLower(c.Author.Name), v.authFilter) {
+				continue
+			}
+			out = append(out, c)
+		}
+		v.commits = out
+	}
+	if v.commitList != nil {
+		v.commitList.Refresh()
+	}
+	v.refreshHeader()
+}
+
+// scheduleFilter debounces filter-entry keystrokes by ~150ms so a long typed
+// query doesn't re-walk the commit list on every character.
+func (v *historyView) scheduleFilter() {
+	v.filterMu.Lock()
+	defer v.filterMu.Unlock()
+	if v.filterTimer != nil {
+		v.filterTimer.Stop()
+	}
+	v.filterTimer = time.AfterFunc(150*time.Millisecond, func() {
+		fyne.Do(func() { v.runFilterFromInputs() })
+	})
+}
+
+// runFilterFromInputs reads the current entry values, drains the iterator on
+// first activation, and applies the filter.
+func (v *historyView) runFilterFromInputs() {
+	msg := strings.ToLower(strings.TrimSpace(v.msgEntry.Text))
+	auth := strings.ToLower(strings.TrimSpace(v.authEntry.Text))
+	activating := (msg != "" || auth != "") && v.commitIter != nil
+	v.msgFilter = msg
+	v.authFilter = auth
+	if activating {
+		v.loadAllCommits()
+	}
+	v.applyFilter()
 }
 
 func (v *historyView) buildUI() fyne.CanvasObject {
@@ -143,14 +230,20 @@ func (v *historyView) buildUI() fyne.CanvasObject {
 	v.commitCountLb = widget.NewLabel("")
 	v.loadMoreBtn = ttwidget.NewButton("Load more commits", func() {
 		v.loadMoreCommits(historyPageSize)
-		v.commitList.Refresh()
-		v.refreshHeader()
 	})
 	v.loadMoreBtn.SetToolTip(fmt.Sprintf("Load the next %d commits", historyPageSize))
 	v.loadMoreBtn.Importance = widget.LowImportance
 
+	v.msgEntry = widget.NewEntry()
+	v.msgEntry.SetPlaceHolder("Message contains…")
+	v.msgEntry.OnChanged = func(string) { v.scheduleFilter() }
+	v.authEntry = widget.NewEntry()
+	v.authEntry.SetPlaceHolder("Author contains…")
+	v.authEntry.OnChanged = func(string) { v.scheduleFilter() }
+	filterRow := container.NewGridWithColumns(2, v.msgEntry, v.authEntry)
+
 	leftFooter := container.NewBorder(nil, nil, v.commitCountLb, v.loadMoreBtn, nil)
-	leftPane := container.NewBorder(nil, leftFooter, nil, nil, v.commitList)
+	leftPane := container.NewBorder(filterRow, leftFooter, nil, nil, v.commitList)
 
 	// --- right pane: commit detail + file list ----------------------------
 	v.headerLabel = widget.NewLabel("(select a commit)")
@@ -209,13 +302,18 @@ func (v *historyView) refreshHeader() {
 	if v.commitCountLb == nil {
 		return
 	}
-	more := ""
-	if v.commitIter == nil {
-		more = " (all loaded)"
-	}
-	v.commitCountLb.SetText(fmt.Sprintf("%d commits loaded%s", len(v.commits), more))
-	if v.loadMoreBtn != nil {
+	filterActive := v.msgFilter != "" || v.authFilter != ""
+	if filterActive {
+		v.commitCountLb.SetText(fmt.Sprintf("%d of %d commits match", len(v.commits), len(v.allCommits)))
+	} else {
+		more := ""
 		if v.commitIter == nil {
+			more = " (all loaded)"
+		}
+		v.commitCountLb.SetText(fmt.Sprintf("%d commits loaded%s", len(v.commits), more))
+	}
+	if v.loadMoreBtn != nil {
+		if v.commitIter == nil || filterActive {
 			v.loadMoreBtn.Disable()
 		} else {
 			v.loadMoreBtn.Enable()
