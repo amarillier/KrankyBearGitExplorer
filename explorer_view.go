@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"os"
@@ -43,6 +44,7 @@ type explorerView struct {
 	pathLabel       *widget.Label
 	branchLabel     *widget.Label
 	statusLabel     *widget.Label
+	syncLabel       *widget.Label
 	lastCommitLabel *widget.Label
 	list        *widget.List
 	tree        *widget.Tree
@@ -67,6 +69,12 @@ type explorerView struct {
 	// fan out N redundant applyFilters() calls.
 	suspendFilters bool
 
+	// watcher, when non-nil, fires the explorer's refresh after filesystem
+	// changes under the current folder or the repo's .git/index. Restarted
+	// on every loadFolder; torn down on window close. Driven by the
+	// "Auto-refresh when files change outside the app" preference.
+	watcher *repoWatcher
+
 	// contextPop is the active row context-menu popup, kept so we can tear
 	// down its tooltip layer before opening a new one.
 	contextPop *widget.PopUp
@@ -80,6 +88,13 @@ type explorerEntry struct {
 	modTime time.Time
 	rel     string // repo-relative slash path (empty if not in a repo)
 	status  string
+
+	// rollup is the non-clean child summary for directory entries. Zero
+	// value for files and for clean directories. Used by the filter bar
+	// to decide whether a directory passes the "Only dirty / untracked"
+	// gate — without rollup, dirs would always pass (they have no
+	// status of their own), which made those filters noisier than useful.
+	rollup rollupCounts
 }
 
 // explorerPrefsChangedHook is set when the explorer window opens. Used by the
@@ -113,11 +128,19 @@ func openExplorerWindow(a fyne.App, master bool) *explorerView {
 	if master {
 		w.SetMaster()
 		w.SetCloseIntercept(func() {
+			if v.watcher != nil {
+				v.watcher.stop()
+				v.watcher = nil
+			}
 			fynetooltip.DestroyWindowToolTipLayer(w.Canvas())
 			v.quitApp()
 		})
 	} else {
 		w.SetCloseIntercept(func() {
+			if v.watcher != nil {
+				v.watcher.stop()
+				v.watcher = nil
+			}
 			fynetooltip.DestroyWindowToolTipLayer(w.Canvas())
 			windowHide(w)
 		})
@@ -127,6 +150,10 @@ func openExplorerWindow(a fyne.App, master bool) *explorerView {
 	explorerPrefsChangedHook = func() {
 		v.refresh()
 		v.refreshMenu()
+		// The auto-refresh toggle is one of the prefs the dialog can flip;
+		// rebuild the watcher so the new on/off state takes effect without
+		// requiring a folder reload.
+		v.restartWatcher()
 	}
 	windowShow(w)
 	return v
@@ -153,12 +180,13 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.pathLabel.Truncation = fyne.TextTruncateEllipsis
 	v.branchLabel = widget.NewLabel("")
 	v.statusLabel = widget.NewLabel("")
+	v.syncLabel = widget.NewLabel("")
 	v.lastCommitLabel = widget.NewLabel("")
 	v.lastCommitLabel.TextStyle = fyne.TextStyle{Italic: true}
 	v.lastCommitLabel.Truncation = fyne.TextTruncateEllipsis
 	headerRight := container.NewVBox(
 		v.pathLabel,
-		container.NewHBox(v.branchLabel, v.statusLabel),
+		container.NewHBox(v.branchLabel, v.statusLabel, v.syncLabel),
 		v.lastCommitLabel,
 	)
 
@@ -291,6 +319,8 @@ const statusHeaderTooltip = `Git status for files in this folder.
 • deleted (staged) — deletion staged for next commit
 • renamed (staged) — rename staged for next commit
 • conflict — merge conflict needs resolution
+• modified (N) / untracked (N) / conflict (N) on a directory row —
+  rolled-up count of non-clean files anywhere in its subtree
 
 Full mapping: View → Git Status Legend…`
 
@@ -428,7 +458,13 @@ func (v *explorerView) buildTree() *widget.Tree {
 				name = id[idx+1:]
 			}
 			if branch {
-				lbl.SetText(name + "/")
+				label := name + "/"
+				if v.repoModel != nil {
+					if rl := v.repoModel.dirRollup[id].label(); rl != "" {
+						label = fmt.Sprintf("%s   [%s]", name+"/", rl)
+					}
+				}
+				lbl.SetText(label)
 				return
 			}
 			st := ""
@@ -587,6 +623,34 @@ func (v *explorerView) doLoadFolder(abs string) {
 		v.setMode(0)
 	}
 	v.refresh()
+	v.restartWatcher()
+}
+
+// restartWatcher tears down any existing fsnotify watcher and (when the
+// "Auto-refresh" preference is on) spins up a new one against the current
+// folder + the repo's .git/index. Wrapping the refresh in fyne.Do bounces
+// off the fsnotify goroutine onto Fyne's UI thread, where list/tree
+// widget updates are required to live.
+func (v *explorerView) restartWatcher() {
+	if v.watcher != nil {
+		v.watcher.stop()
+		v.watcher = nil
+	}
+	if !v.app.Preferences().BoolWithFallback(prefAutoRefresh, true) {
+		return
+	}
+	if v.currentPath == "" {
+		return
+	}
+	targets := repoWatchTargets(v.currentPath, v.repoRoot)
+	v.watcher = startRepoWatcher(targets, func() {
+		fyne.Do(func() {
+			if v.currentPath == "" {
+				return
+			}
+			v.refresh()
+		})
+	})
 }
 
 // promptRepoSwitch surfaces a modal dialog listing the still-open repo-bound
@@ -693,12 +757,14 @@ func (v *explorerView) refresh() {
 			}
 		}
 		v.lastCommitLabel.SetText(latestCommitSummary(v.repo))
+		v.refreshRemoteSync()
 		v.modeBtn.Enable()
 		v.historyBtn.Enable()
 		v.healthBtn.Enable()
 	} else {
 		v.branchLabel.SetText("(not a git repository)")
 		v.statusLabel.SetText("")
+		v.syncLabel.SetText("")
 		v.lastCommitLabel.SetText("")
 		v.modeBtn.Disable()
 		v.historyBtn.Disable()
@@ -730,6 +796,49 @@ func (v *explorerView) applyFilters() {
 	}
 }
 
+// refreshRemoteSync paints the header's sync indicator from the local
+// cached state (instant — three `git` shellouts that read refs, no
+// network) and kicks off an asynchronous ls-remote probe to verify the
+// remote is actually reachable. The async result lands via fyne.Do and
+// only updates the label if the user hasn't navigated to a different
+// repo in the meantime.
+//
+// When no upstream is configured, the indicator says so and we skip the
+// live probe — there's nothing to probe against.
+func (v *explorerView) refreshRemoteSync() {
+	if v.syncLabel == nil {
+		return
+	}
+	if v.repoRoot == "" {
+		v.syncLabel.SetText("")
+		return
+	}
+	info := readLocalSync(v.repoRoot)
+	v.syncLabel.SetText("  •  " + info.label())
+	if !info.HasUpstream {
+		return
+	}
+	snapshotRoot := v.repoRoot
+	upstreamRef := info.UpstreamRef
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), remoteCheckTimeout)
+		defer cancel()
+		ok, err := checkRemoteReachable(ctx, snapshotRoot, upstreamRef)
+		fyne.Do(func() {
+			// Guard: if the user has switched folders since we started,
+			// the label is now showing a different repo's status — don't
+			// stomp on it with the stale probe result.
+			if v.syncLabel == nil || v.repoRoot != snapshotRoot {
+				return
+			}
+			info.LiveChecked = true
+			info.Reachable = ok
+			info.LiveErr = err
+			v.syncLabel.SetText("  •  " + info.label())
+		})
+	}()
+}
+
 // resetFilters clears the filter state and the widgets back to defaults.
 // Called on folder change so each project starts from a clean slate — no
 // stale "I forgot the filter was on" moments after switching repos.
@@ -749,18 +858,49 @@ func (v *explorerView) resetFilters() {
 
 // filterExplorerEntries applies the filter to the folder view's row list.
 // The .git pinned row bypasses all filters. Files run through the full status
-// filter (leafStatusPasses). Directories are only subject to the show-ignored
-// gate — without directory rollup, we can't tell if a regular dir contains
-// dirty/untracked content, so we always show non-ignored dirs to keep the
-// view navigable. Ignored dirs (assets/, bin/, etc.) follow the same opt-in
-// rule as ignored files: hidden unless "Show ignored" or "Only ignored" is on.
+// filter (leafStatusPasses). Directories are gated on:
+//
+//   - Show-ignored: an ignored dir is hidden unless "Show ignored" or "Only
+//     ignored" is on, matching the rule for ignored files.
+//   - "Only dirty / untracked": a dir passes only if its rollup contains
+//     children of that category. Submodule dirs are treated as opaque (a
+//     separate repo), so they always pass these gates for navigation.
+//
+// "Only ignored" applied to directories matches only dirs that are themselves
+// ignored — we don't roll up ignored content (go-git's Status() omits ignored
+// files, so the rollup wouldn't see them anyway).
 func filterExplorerEntries(in []explorerEntry, f explorerFilter) []explorerEntry {
 	out := make([]explorerEntry, 0, len(in))
 	for _, e := range in {
 		if !e.isGit {
 			if e.isDir {
-				if humanStatusLabel(e.status) == "ignored" && !f.showIgnored && !f.onlyIgnored {
+				human := humanStatusLabel(e.status)
+				isIgnored := human == "ignored"
+				isSubmodule := human == "submodule"
+				if isIgnored && !f.showIgnored && !f.onlyIgnored {
 					continue
+				}
+				if f.onlyDirty || f.onlyUntracked || f.onlyIgnored {
+					match := false
+					if isSubmodule {
+						// Submodules are separate repos; don't claim to know
+						// their internals — always pass so the user can
+						// drill in.
+						match = true
+					} else {
+						if f.onlyDirty && (e.rollup.dirty+e.rollup.conflict) > 0 {
+							match = true
+						}
+						if f.onlyUntracked && e.rollup.untracked > 0 {
+							match = true
+						}
+						if f.onlyIgnored && isIgnored {
+							match = true
+						}
+					}
+					if !match {
+						continue
+					}
 				}
 			} else if !leafStatusPasses(e.status, f) {
 				continue
@@ -851,12 +991,21 @@ func readDirEntries(path, repoRoot string, m *repoTreeModel, showDotGit bool) ([
 							e.status = "!!"
 						}
 					} else if !e.isGit {
-						if _, ok := m.submodules[e.rel]; ok {
+						// Stamp the rollup on every non-special dir so filter
+						// logic can use it even when a more-specific label
+						// (submodule / ignored) wins for display.
+						e.rollup = m.dirRollup[e.rel]
+						_, isSubmodule := m.submodules[e.rel]
+						_, isSubAncestor := m.submoduleAncestors[e.rel]
+						switch {
+						case isSubmodule:
 							e.status = "submodule"
-						} else if _, ok := m.submoduleAncestors[e.rel]; ok {
-							e.status = "contains submodule"
-						} else if m.isIgnored(e.rel, true) {
+						case m.isIgnored(e.rel, true):
 							e.status = "!!"
+						case e.rollup.total() > 0:
+							e.status = e.rollup.label()
+						case isSubAncestor:
+							e.status = "contains submodule"
 						}
 					}
 				}
@@ -1011,6 +1160,11 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	legend := fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() })
 	history := fyne.NewMenuItem("Repo History…", func() { v.openHistory() })
 	health := fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() })
+	branches := fyne.NewMenuItem("Branches…", func() { v.showBranches() })
+	tags := fyne.NewMenuItem("Tags…", func() { v.showTags() })
+	remotes := fyne.NewMenuItem("Remotes…", func() { v.showRemotes() })
+	contributors := fyne.NewMenuItem("Contributors…", func() { v.showContributors() })
+	stashes := fyne.NewMenuItem("Stashes…", func() { v.showStashes() })
 	scanDeps := fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() })
 
 	view := fyne.NewMenu("View",
@@ -1020,6 +1174,11 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		toggleView,
 		history,
 		health,
+		branches,
+		tags,
+		remotes,
+		contributors,
+		stashes,
 		scanDeps,
 		legend,
 		fyne.NewMenuItemSeparator(),
@@ -1072,7 +1231,18 @@ func (v *explorerView) openHistory() {
 			v.win)
 		return
 	}
-	openHistoryWindow(v.app, v.repo, v.repoRoot, v.win)
+	openHistoryWindow(v.app, v.repo, v.repoRoot, v.win, "")
+}
+
+// showFileHistory opens a Repo History window pre-filtered to commits that
+// touched the given repo-relative path. The user can drop the filter via
+// the "Show all history" button in the window itself to widen back to the
+// full log without losing the window's other state.
+func (v *explorerView) showFileHistory(rel string) {
+	if v.repo == nil || v.repoRoot == "" || rel == "" {
+		return
+	}
+	openHistoryWindow(v.app, v.repo, v.repoRoot, v.win, rel)
 }
 
 // openRepoHealth pops the read-only Repo Health dialog (object-database
@@ -1085,7 +1255,50 @@ func (v *explorerView) openRepoHealth() {
 			v.win)
 		return
 	}
-	showRepoHealth(v.app, v.win, v.repoRoot)
+	showRepoHealth(v.app, v.win, v.repo, v.repoRoot)
+}
+
+// showBranches / showTags / showRemotes pop the corresponding read-only
+// listing dialog. All three require a repo; they share the no-repo guard.
+func (v *explorerView) showBranches() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showBranchesDialog(v.repo, v.win, v.repoRoot)
+}
+func (v *explorerView) showTags() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showTagsDialog(v.repo, v.win, v.repoRoot)
+}
+func (v *explorerView) showRemotes() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showRemotesDialog(v.repo, v.win, v.repoRoot)
+}
+func (v *explorerView) showContributors() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showContributorsDialog(v.repo, v.win, v.repoRoot)
+}
+func (v *explorerView) showStashes() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showStashesDialog(v.repo, v.win, v.repoRoot)
+}
+
+func (v *explorerView) guardRepoLoaded() bool {
+	if v.repo == nil || v.repoRoot == "" {
+		dialog.ShowInformation("No repository",
+			"Open a folder that is inside a git repository first, then try again.",
+			v.win)
+		return false
+	}
+	return true
 }
 
 // runDepScan launches the dep-scan vulnerability scanner against the current
@@ -1115,6 +1328,7 @@ func (v *explorerView) showStatusLegend() {
 		{"ignored", "Excluded by .gitignore (or another ignore source)."},
 		{"submodule", "A separate git repository embedded in this one (declared in .gitmodules). Click the row to descend into it as its own repo; it'll appear in your recent folders list."},
 		{"contains submodule", "Not a submodule itself, but somewhere inside this directory there's one (e.g. a vendor/ folder holding a submodule). Click through to find it."},
+		{"modified (N) / untracked (N) / conflict (N)", "Directory rollup — N is the total number of non-clean files anywhere in this directory's subtree. The headline label is the highest-severity category present (conflict > modified > untracked); the count covers all non-clean files, not just that category. Ignored files are not rolled up."},
 		{"deleted", "Removed from the working tree but still in the index."},
 		{"deleted (staged)", "Deletion staged for the next commit."},
 		{"renamed (staged)", "Rename staged for the next commit."},
@@ -1158,6 +1372,11 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		trayRecentFolders,
 		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
 		fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() }),
+		fyne.NewMenuItem("Branches…", func() { v.showBranches() }),
+		fyne.NewMenuItem("Tags…", func() { v.showTags() }),
+		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
+		fyne.NewMenuItem("Contributors…", func() { v.showContributors() }),
+		fyne.NewMenuItem("Stashes…", func() { v.showStashes() }),
 		fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() }),
 		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
 		fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) }),

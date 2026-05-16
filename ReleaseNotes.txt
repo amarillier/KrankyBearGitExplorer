@@ -2,23 +2,202 @@
 KrankyBear GitExplorer - RELEASE NOTES
 ═══════════════════════════════════════════════════════════════════════════════
 Future ideas:
-- Directory-level rolled-up status (folders with modified children get a badge).
-- fsnotify-based auto-refresh when the worktree changes externally.
-- File-level history — right-click a tracked file → "Show history for this
-  file…" — filtered Repo History showing only commits that touched it.
-- Stash list (read-only) — Tools → Show Stashes → click to diff.
-- Repo Health enrichment — add last-commit age, branch + tag counts to the
-  existing stats + fsck dialog. (Stats + fsck verify + hints already
-  shipped in v0.3.0.)
-- Compare any two refs/commits — multi-select two commits in the Repo
-  History view → "Compare these…" → existing read-only Historical Diff
-  but cross-commit instead of vs-parent. Useful for "what changed
-  between v1.0 and v1.5?" review work.
-- Contributors list — read-only: names, commit counts, last-contribution
-  date, lines-touched roll-up. Surfaces project/team shape.
-- Branch / Tag / Remote list views — three small read-only listings (name
-  + last commit + date). Pure display; deliberately no checkout / create /
-  delete buttons (those would cross the explorer-vs-manager line).
+(empty for now — v0.5.0 cleared the existing list; new ideas land here as
+they come up.)
+
+Version 0.5.0 - May 16, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Directory-level rolled-up status — folder rows now show a summary
+  like "modified (5)" when their subtree contains non-clean files,
+  filling in the last big "Known gap" of v0.4.0. The count is the
+  total non-clean files anywhere in the subtree; the headline category
+  is the highest-severity one present (conflict > modified >
+  untracked). Visible in both the folder view's Status column and the
+  tracked-files tree's branch labels (e.g. "src/   [modified (5)]").
+    • The filter bar's "Only dirty / Only untracked" toggles now use
+      the rollup to filter directories too — ticking "Only dirty"
+      collapses the view to just the folders with dirty content
+      anywhere inside, not all directories. Much more useful as a
+      "what needs my attention?" filter.
+    • Submodule rows are treated as opaque (a separate repo) and
+      always pass the dirty/untracked gates so you can drill in; the
+      submodule itself reports its own rollup once you enter it.
+    • Ignored files are deliberately excluded from the rollup —
+      go-git's Status() doesn't enumerate them, and walking the
+      gitignore matcher recursively for every directory listing would
+      slow things down on large repos. The existing file-level "Only
+      ignored" filter already covers .gitignore auditing.
+    • Existing labels — submodule, ignored — still win over the
+      rollup since they describe what the directory *is*, not just
+      what's inside.
+
+- File-level history — right-click a tracked file → "Show history for
+  this file…" opens the existing Repo History window pre-filtered to
+  just the commits that touched that file. Built on go-git's
+  LogOptions.FileName so the iterator yields only matching commits;
+  the existing "Search across history" (message + author) layers on
+  top of the file filter, so e.g. "files I touched in commits
+  mentioning auth" is one query.
+    • Window title reads "File History: <repo> — <path>" so a
+      file-scoped history is distinguishable from a general one
+      sitting on another monitor.
+    • An italic indicator row at the top of the left pane reads
+      "File history: <path>" with a toggle button. Click "Show all
+      history" to broaden back to the full repo log without closing
+      the window; the file is remembered as a breadcrumb ("Last
+      file: <path>") and the button flips to "Back to file history"
+      so one more click returns you to the file-scoped view. Message
+      / author search fields are cleared on each transition so each
+      view lands in a clean state.
+    • Same enable rule as Diff against HEAD: the file must be tracked
+      and already committed at least once (no menu entry for
+      untracked, ignored, or freshly-added-staged files).
+
+- Compare any two commits — answers "what changed between v1.0 and
+  v1.5?" without leaving the GUI. In the Repo History window:
+    • Click a commit, then click the new "Pick as compare base"
+      button in the detail-pane header (checkmark icon, medium
+      importance so it reads as a button not a chip). A banner
+      appears above the commit list: "Compare base: <SHA> —
+      <subject>  [Cancel compare]".
+    • Click any other commit → the right pane switches to
+      "Compare: <baseSHA> → <selectedSHA>" mode, showing the files
+      changed between the two commits (not selected-vs-parent).
+    • Click a file in compare mode → opens a Historical Diff between
+      the two arbitrary commits, both sides read-only. Pane labels
+      use SHA + date + commit subject so parallel compares stay
+      self-identifying.
+    • Diff window auto-follows the selection — once you've opened a
+      diff for some file, switching to another commit (in compare
+      mode) reopens the diff for the same file at the new compare
+      pair. Effectively "scrub" the file through history. Driven by
+      the existing "Keep only one diff window" preference; if you
+      close the diff window manually it stays closed.
+    • Pick a new base anytime to swap; Cancel returns the right pane
+      to ordinary per-commit detail. Compare mode composes cleanly
+      with both the file-history filter and the message/author
+      search — the base commit survives across re-filters, and the
+      file-history path filter narrows the compare change list too
+      (so "history of main.go" + compare shows only main.go between
+      the two commits, not every file).
+
+- Auto-refresh on filesystem changes — the explorer now watches the
+  current folder and (when in a repo) `.git/index` via fsnotify, so
+  edits made outside the app — your IDE saving a file, a CLI `git
+  commit`, a branch switch — update the folder view automatically
+  without you hitting Cmd/Ctrl+R. Preferences → Explorer → "Auto-
+  refresh when files change outside the app" (default on); flip
+  off to stick with manual refresh.
+    • Events are debounced ~250ms so a single $EDITOR save (which
+      typically fires multiple CREATE/RENAME/WRITE events for swap
+      + temp + final) coalesces into one refresh.
+    • Watching is non-recursive — just the visible folder + the
+      repo's index file, not the entire worktree. That keeps watch
+      handle counts bounded on large repos without losing the most
+      useful signal. Changes deep inside a subdirectory still need
+      a manual Refresh.
+    • The watcher restarts on folder change (re-points at the new
+      currentPath / repo root), tears down on window close, and
+      restarts if you toggle the preference without needing a
+      folder reload.
+
+- Repo Health enrichment — the dialog now opens with a "Repository
+  overview" section above the existing object-database stats:
+  HEAD branch + short SHA, last-commit timestamp with relative-age
+  hint ("2h ago"), commit subject + author, and counts of local
+  branches / tags / remotes. Same data is included in the "Copy
+  report to clipboard" output. All read via go-git, no extra
+  shell-outs.
+
+- Branches / Tags / Remotes list views — three small read-only
+  dialogs under View → Branches… / Tags… / Remotes…. Branches and
+  tags show **name · short SHA · commit date · subject** sorted
+  newest-first; remotes show **name · URL** (a remote with both
+  fetch and push URLs gets one row per URL). Pure display by
+  design — no checkout / create / delete buttons; that line stays
+  with the git CLI.
+
+- Contributors list — View → Contributors… opens a per-author
+  breakdown of the full commit log: name + email, commit count,
+  first-contribution date, last-contribution date, and lines
+  added / removed via go-git's per-commit Stats(). Sorted by
+  commit count descending. Surfaces "who's been touching this
+  project lately?" at a glance. Computed synchronously — fast
+  for typical repos, may take a moment on very large histories.
+
+- Stashes — View → Stashes… enumerates the repo's saved stashes
+  (shelled to `git stash list` since go-git doesn't expose stash
+  iteration directly). Each row shows `stash@{N}` · subject ·
+  date. Clicking a stash opens a per-stash detail dialog with the
+  files it touches; clicking a file opens a Historical-Diff-style
+  read-only diff between the stash and its base commit. Pure
+  read-only — there's no "apply" or "pop" button; you run those
+  in the CLI when you're ready.
+
+- Right-click menu rounds out lifecycle ops for untracked / ignored
+  files. The folder-view context menu now offers, alongside the
+  existing Diff / History / git rm entries:
+    • git add (start tracking)… — stages an untracked file via
+      go-git's wt.Add; the file shows up as "added (staged)" on
+      the next refresh.
+    • Add to .gitignore… — appends a leading-slash anchored entry
+      (e.g. "/path/to/file.txt") to the repo's root .gitignore,
+      creating the file if it didn't exist. Anchored on purpose
+      so it matches just that exact path, not every file of that
+      name anywhere in the tree.
+    • Un-ignore (allow tracking)… — symmetric counterpart for
+      currently-ignored files. If .gitignore has an exact-match
+      line for this file, that line is removed (clean undo when
+      the file was ignored via the menu item above). Otherwise
+      the file is being ignored by a broader pattern (e.g.
+      "*.zzz" or "bin/*") and an anchored negation entry
+      ("!/path/to/file.txt") is appended instead — exempts just
+      this one file without disturbing the broader pattern. The
+      confirm dialog tells you which path will be taken before
+      the .gitignore edit happens.
+    • Delete from disk… — removes the file from the filesystem
+      via os.Remove, with a clear "this can't be undone" confirm.
+      Only offered for untracked or ignored files (tracked files
+      have git rm), and only for files, not directories — recursive
+      directory delete is too footgun-prone for a casual menu.
+  All three only enable when the row's status matches; nothing
+  appears for tracked files (those have git rm and Diff vs HEAD
+  already).
+
+- Tray menu now mirrors the View menu's repo-views set —
+  Branches… / Tags… / Remotes… / Contributors… / Stashes… are
+  available straight from the tray icon, no detour through the
+  main app window. Order matches the menu bar for consistency.
+
+- Branches / Tags / Remotes / Contributors dialogs use a typed
+  custom row widget (refRowWidget / contributorRowWidget) instead
+  of relying on container child-ordering, which had been letting
+  long URLs / author emails / commit subjects truncate too
+  aggressively. Wide column (URL, Subject, Author) gets the
+  remaining horizontal space via a Border layout; narrow columns
+  stay tight. Resize the dialog wider and the wide column grows.
+
+- Remote-sync indicator in the explorer's repo header — alongside
+  "Branch: …  •  clean: N, dirty/untracked: M" you now see one
+  of:
+    • "in sync with origin/<branch> ✓"
+    • "↑N vs origin/<branch>"  /  "↓M …"  /  "↑N ↓M …"
+    • "no upstream" (branch has no tracking config)
+    • "(no remotes)" (repo has no remotes at all)
+    • "… — remote unreachable" (live ls-remote check failed)
+  The ahead/behind counts are read from cached refs (no network),
+  computed via `git rev-list --left-right --count @{upstream}...HEAD`
+  — instant. Asynchronously, a `git ls-remote --heads <remote>`
+  probe with a 5s timeout verifies the remote actually answers; on
+  success the indicator gets a ✓ appended, on failure (VPN
+  disconnected, auth issue, slow link) it appends "— remote
+  unreachable". The live result lands via fyne.Do on the UI
+  thread and is dropped if you've already navigated away from the
+  repo it was probing, so a stale check can't stomp on the
+  freshly-rendered indicator for a different folder.
+
 
 Version 0.4.0 - May 15, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

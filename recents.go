@@ -16,6 +16,7 @@ const (
 	prefSyncScroll         = "syncScroll"
 	prefSingleDiffWindow   = "singleDiffWindow"
 	prefShowDotGit         = "showDotGitInFolderList"
+	prefAutoRefresh        = "autoRefreshOnFSChange"
 	prefRememberWindowSize = "rememberWindowSize"
 	prefWindowWidth        = "windowWidth"
 	prefWindowHeight       = "windowHeight"

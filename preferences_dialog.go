@@ -58,6 +58,11 @@ func showPreferences(a fyne.App, v *diffView) {
 	showDotGitNote := widget.NewLabel("Off by default — .git is usually noise in the worktree view. Use the Tracked files toolbar button to inspect what git is tracking. Turn this on if you actually want to drill into .git's internals.")
 	showDotGitNote.Wrapping = fyne.TextWrapWord
 
+	autoRefresh := widget.NewCheck("Auto-refresh when files change outside the app", nil)
+	autoRefresh.Checked = a.Preferences().BoolWithFallback(prefAutoRefresh, true)
+	autoRefreshNote := widget.NewLabel("On by default. Watches the current folder + .git/index so external edits (your IDE saving a file, a CLI commit, a branch switch) update the explorer without you hitting Refresh. Events are debounced ~250ms to avoid flicker. Turn off if you'd rather refresh manually.")
+	autoRefreshNote.Wrapping = fyne.TextWrapWord
+
 	rememberWin := widget.NewCheck("Remember main window size between launches", nil)
 	rememberWin.Checked = a.Preferences().BoolWithFallback(prefRememberWindowSize, false)
 	rememberWinNote := widget.NewLabel("When enabled, the window size is stored when you quit the app (menu Quit, tray Quit, or closing the main window). When disabled, the app opens at the default size.")
@@ -120,6 +125,8 @@ func showPreferences(a fyne.App, v *diffView) {
 		widget.NewLabelWithStyle("Explorer", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		showDotGit,
 		showDotGitNote,
+		autoRefresh,
+		autoRefreshNote,
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle("Diff view", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		showLineNums,
@@ -162,6 +169,7 @@ func showPreferences(a fyne.App, v *diffView) {
 		a.Preferences().SetBool(prefSyncScroll, syncScroll.Checked)
 		a.Preferences().SetBool(prefSingleDiffWindow, singleDiff.Checked)
 		a.Preferences().SetBool(prefShowDotGit, showDotGit.Checked)
+		a.Preferences().SetBool(prefAutoRefresh, autoRefresh.Checked)
 		a.Preferences().SetBool(prefRememberWindowSize, rememberWin.Checked)
 		// Ask the explorer to re-apply preferences (refresh the menu + the
 		// worktree listing in case "Show .git" flipped).
