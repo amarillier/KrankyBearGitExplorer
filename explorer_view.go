@@ -31,7 +31,8 @@ type explorerView struct {
 	win fyne.Window
 
 	currentPath string
-	entries     []explorerEntry
+	allEntries  []explorerEntry // unfiltered worktree listing, source of truth
+	entries     []explorerEntry // currently-rendered subset (post-filter)
 	repo        *git.Repository
 	repoRoot    string
 	repoModel   *repoTreeModel
@@ -53,6 +54,18 @@ type explorerView struct {
 	historyBtn  *ttwidget.Button
 	healthBtn   *ttwidget.Button
 	depScanBtn  *ttwidget.Button
+
+	// Filter bar — applies to both folder view and tracked-files tree.
+	filter                 explorerFilter
+	filterEntry            *widget.Entry
+	filterDirtyCheck       *widget.Check
+	filterUntrackedCheck   *widget.Check
+	filterOnlyIgnoredCheck *widget.Check
+	filterIgnoredCheck     *widget.Check
+	// suspendFilters short-circuits the filter widgets' OnChanged handlers
+	// while we programmatically reset them on folder change, so we don't
+	// fan out N redundant applyFilters() calls.
+	suspendFilters bool
 
 	// contextPop is the active row context-menu popup, kept so we can tear
 	// down its tooltip layer before opening a new one.
@@ -155,6 +168,16 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	browseBtn.SetToolTip("Choose a project folder to inspect (Cmd/Ctrl+O)")
 	browseBtn.Importance = widget.MediumImportance
 
+	var recentBtn *ttwidget.Button
+	recentBtn = ttwidget.NewButtonWithIcon("Recent ▾", theme.FolderIcon(), func() {
+		menu := v.buildRecentFoldersSubmenu()
+		pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(recentBtn)
+		pos.Y += recentBtn.Size().Height
+		widget.ShowPopUpMenuAtPosition(menu, v.win.Canvas(), pos)
+	})
+	recentBtn.SetToolTip("Open a recently-opened project folder")
+	recentBtn.Importance = widget.LowImportance
+
 	v.upBtn = ttwidget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { v.goUp() })
 	v.upBtn.SetToolTip("Open the parent folder")
 	v.upBtn.Importance = widget.LowImportance
@@ -184,7 +207,49 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.depScanBtn.SetToolTip("Run dep-scan against this folder — multi-ecosystem dependency vulnerability scan (osv-scanner + govulncheck)")
 	v.depScanBtn.Importance = widget.LowImportance
 
-	toolRow := container.NewHBox(browseBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn, v.historyBtn, v.healthBtn, v.depScanBtn)
+	toolRow := container.NewHBox(browseBtn, recentBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn, v.historyBtn, v.healthBtn, v.depScanBtn)
+
+	v.filterEntry = widget.NewEntry()
+	v.filterEntry.SetPlaceHolder("Filter by name…")
+	v.filterEntry.OnChanged = func(s string) {
+		if v.suspendFilters {
+			return
+		}
+		v.filter.nameContains = strings.ToLower(strings.TrimSpace(s))
+		v.applyFilters()
+	}
+	v.filterDirtyCheck = widget.NewCheck("Only dirty", func(b bool) {
+		if v.suspendFilters {
+			return
+		}
+		v.filter.onlyDirty = b
+		v.applyFilters()
+	})
+	v.filterUntrackedCheck = widget.NewCheck("Only untracked", func(b bool) {
+		if v.suspendFilters {
+			return
+		}
+		v.filter.onlyUntracked = b
+		v.applyFilters()
+	})
+	v.filterOnlyIgnoredCheck = widget.NewCheck("Only ignored", func(b bool) {
+		if v.suspendFilters {
+			return
+		}
+		v.filter.onlyIgnored = b
+		v.applyFilters()
+	})
+	v.filterIgnoredCheck = widget.NewCheck("Show ignored", func(b bool) {
+		if v.suspendFilters {
+			return
+		}
+		v.filter.showIgnored = b
+		v.applyFilters()
+	})
+	filterRow := container.NewBorder(nil, nil, nil,
+		container.NewHBox(v.filterDirtyCheck, v.filterUntrackedCheck, v.filterOnlyIgnoredCheck, v.filterIgnoredCheck),
+		v.filterEntry,
+	)
 
 	headerLabels := buildExplorerHeaderRow()
 	v.list = v.buildList()
@@ -194,7 +259,7 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	listWithHeader := container.NewBorder(headerLabels, nil, nil, nil, v.list)
 	v.contentArea.Add(listWithHeader)
 
-	topBar := container.NewVBox(headerRow, toolRow, widget.NewSeparator())
+	topBar := container.NewVBox(headerRow, toolRow, filterRow, widget.NewSeparator())
 	return container.NewBorder(topBar, nil, nil, nil, v.contentArea)
 }
 
@@ -220,6 +285,8 @@ const statusHeaderTooltip = `Git status for files in this folder.
 • added (staged) — new file added to the index
 • untracked — not tracked by git
 • ignored — excluded by .gitignore
+• submodule — separate repo embedded here; click to descend into it
+• contains submodule — this directory has a submodule somewhere inside
 • deleted — removed from worktree, still in index
 • deleted (staged) — deletion staged for next commit
 • renamed (staged) — rename staged for next commit
@@ -311,7 +378,14 @@ func (v *explorerView) buildList() *widget.List {
 			return
 		}
 		if e.isDir {
-			v.loadFolder(filepath.Join(v.currentPath, e.name))
+			target := filepath.Join(v.currentPath, e.name)
+			// Submodules are their own repos; promote to recents on entry so
+			// the user can hop back without re-navigating from the parent.
+			if e.status == "submodule" {
+				addRecentFolder(v.app, target)
+				v.refreshMenu()
+			}
+			v.loadFolder(target)
 			lst.UnselectAll()
 			return
 		}
@@ -474,7 +548,31 @@ func (v *explorerView) loadFolder(path string) {
 		dialog.ShowError(err, v.win)
 		return
 	}
+
+	// Repo-switch guard: if we're crossing into a different repo (or out of
+	// one) while repo-bound child windows are still open, ask the user what
+	// to do before any state changes — those windows would otherwise keep
+	// showing data from the previous repo, which is a footgun.
+	targetRoot := findRepoRoot(abs)
+	if targetRoot != v.repoRoot && len(repoChildWindows) > 0 {
+		v.promptRepoSwitch(abs, targetRoot, func(proceed, closeWindows bool) {
+			if !proceed {
+				return
+			}
+			if closeWindows {
+				closeAllRepoChildWindows()
+			}
+			v.doLoadFolder(abs)
+		})
+		return
+	}
+	v.doLoadFolder(abs)
+}
+
+func (v *explorerView) doLoadFolder(abs string) {
 	v.currentPath = abs
+
+	v.resetFilters()
 
 	v.repoModel = nil
 	v.repo = nil
@@ -489,6 +587,57 @@ func (v *explorerView) loadFolder(path string) {
 		v.setMode(0)
 	}
 	v.refresh()
+}
+
+// promptRepoSwitch surfaces a modal dialog listing the still-open repo-bound
+// child windows and asking whether to close them, keep them open, or cancel
+// the repo switch entirely. Built with dialog.NewCustom (single dismiss =
+// "Cancel") plus two action buttons embedded in the content.
+func (v *explorerView) promptRepoSwitch(targetAbs, targetRoot string, cb func(proceed, closeWindows bool)) {
+	snapshot := append([]fyne.Window(nil), repoChildWindows...)
+
+	from := v.repoRoot
+	if from == "" {
+		from = "(current folder)"
+	}
+	to := targetRoot
+	if to == "" {
+		to = targetAbs + "  (not a git repository)"
+	}
+
+	intro := widget.NewLabel(fmt.Sprintf("Switching from %s to %s will leave these windows showing data from the previous repo:", from, to))
+	intro.Wrapping = fyne.TextWrapWord
+
+	listBox := container.NewVBox()
+	for _, w := range snapshot {
+		title := "(untitled window)"
+		if w != nil {
+			if t := w.Title(); t != "" {
+				title = t
+			}
+		}
+		listBox.Add(widget.NewLabel("  • " + title))
+	}
+
+	question := widget.NewLabel("Close them, or keep them open?")
+	question.TextStyle = fyne.TextStyle{Bold: true}
+
+	var dlg dialog.Dialog
+	closeBtn := widget.NewButton("Close them and continue", func() {
+		dlg.Hide()
+		cb(true, true)
+	})
+	closeBtn.Importance = widget.HighImportance
+	keepBtn := widget.NewButton("Keep them open and continue", func() {
+		dlg.Hide()
+		cb(true, false)
+	})
+	actions := container.NewHBox(layout.NewSpacer(), closeBtn, keepBtn)
+
+	content := container.NewVBox(intro, listBox, widget.NewSeparator(), question, actions)
+	dlg = dialog.NewCustom("Switching repositories", "Cancel", content, v.win)
+	dlg.Resize(fyne.NewSize(560, 320))
+	dlg.Show()
 }
 
 // findRepoRoot walks up from start until it finds a directory containing a
@@ -524,7 +673,8 @@ func (v *explorerView) refresh() {
 		dialog.ShowError(err, v.win)
 		return
 	}
-	v.entries = entries
+	v.allEntries = entries
+	v.applyFilters()
 
 	v.pathLabel.SetText(v.currentPath)
 
@@ -561,6 +711,67 @@ func (v *explorerView) refresh() {
 	if v.tree != nil {
 		v.tree.Refresh()
 	}
+}
+
+// applyFilters rebuilds v.entries (folder list) and v.repoModel.visible
+// (tracked-files tree) from v.allEntries and the active filter state, then
+// refreshes the underlying widgets. Cheap to call — re-runs on every filter
+// widget change and on every refresh().
+func (v *explorerView) applyFilters() {
+	v.entries = filterExplorerEntries(v.allEntries, v.filter)
+	if v.repoModel != nil {
+		v.repoModel.visible = v.repoModel.computeVisible(v.filter)
+	}
+	if v.list != nil {
+		v.list.Refresh()
+	}
+	if v.tree != nil {
+		v.tree.Refresh()
+	}
+}
+
+// resetFilters clears the filter state and the widgets back to defaults.
+// Called on folder change so each project starts from a clean slate — no
+// stale "I forgot the filter was on" moments after switching repos.
+func (v *explorerView) resetFilters() {
+	v.filter = explorerFilter{}
+	if v.filterEntry == nil {
+		return
+	}
+	v.suspendFilters = true
+	v.filterEntry.SetText("")
+	v.filterDirtyCheck.SetChecked(false)
+	v.filterUntrackedCheck.SetChecked(false)
+	v.filterOnlyIgnoredCheck.SetChecked(false)
+	v.filterIgnoredCheck.SetChecked(false)
+	v.suspendFilters = false
+}
+
+// filterExplorerEntries applies the filter to the folder view's row list.
+// The .git pinned row bypasses all filters. Files run through the full status
+// filter (leafStatusPasses). Directories are only subject to the show-ignored
+// gate — without directory rollup, we can't tell if a regular dir contains
+// dirty/untracked content, so we always show non-ignored dirs to keep the
+// view navigable. Ignored dirs (assets/, bin/, etc.) follow the same opt-in
+// rule as ignored files: hidden unless "Show ignored" or "Only ignored" is on.
+func filterExplorerEntries(in []explorerEntry, f explorerFilter) []explorerEntry {
+	out := make([]explorerEntry, 0, len(in))
+	for _, e := range in {
+		if !e.isGit {
+			if e.isDir {
+				if humanStatusLabel(e.status) == "ignored" && !f.showIgnored && !f.onlyIgnored {
+					continue
+				}
+			} else if !leafStatusPasses(e.status, f) {
+				continue
+			}
+		}
+		if f.nameContains != "" && !strings.Contains(strings.ToLower(e.name), f.nameContains) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 func (v *explorerView) goUp() {
@@ -632,9 +843,21 @@ func readDirEntries(path, repoRoot string, m *repoTreeModel, showDotGit bool) ([
 			full := filepath.Join(path, de.Name())
 			if rel, err := filepath.Rel(repoRoot, full); err == nil {
 				e.rel = filepath.ToSlash(rel)
-				if m != nil && !e.isDir {
-					if st, ok := m.fileStatus[e.rel]; ok {
-						e.status = st
+				if m != nil {
+					if !e.isDir {
+						if st, ok := m.fileStatus[e.rel]; ok {
+							e.status = st
+						} else if m.isIgnored(e.rel, false) {
+							e.status = "!!"
+						}
+					} else if !e.isGit {
+						if _, ok := m.submodules[e.rel]; ok {
+							e.status = "submodule"
+						} else if _, ok := m.submoduleAncestors[e.rel]; ok {
+							e.status = "contains submodule"
+						} else if m.isIgnored(e.rel, true) {
+							e.status = "!!"
+						}
 					}
 				}
 			}
@@ -890,6 +1113,8 @@ func (v *explorerView) showStatusLegend() {
 		{"added (staged + new edits)", "Added to the index, then further edited locally."},
 		{"untracked", "Present in the working tree but not in the index (and not ignored)."},
 		{"ignored", "Excluded by .gitignore (or another ignore source)."},
+		{"submodule", "A separate git repository embedded in this one (declared in .gitmodules). Click the row to descend into it as its own repo; it'll appear in your recent folders list."},
+		{"contains submodule", "Not a submodule itself, but somewhere inside this directory there's one (e.g. a vendor/ folder holding a submodule). Click through to find it."},
 		{"deleted", "Removed from the working tree but still in the index."},
 		{"deleted (staged)", "Deletion staged for the next commit."},
 		{"renamed (staged)", "Rename staged for the next commit."},

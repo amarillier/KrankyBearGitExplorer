@@ -1242,6 +1242,7 @@ func openDiffWindowWithPreload(a fyne.App, master bool, leftP, leftT, rightP, ri
 			}
 			fynetooltip.DestroyWindowToolTipLayer(w.Canvas())
 			unregisterSecondaryDiff(v)
+			unregisterRepoChildWindow(w)
 			windowHide(w)
 		})
 	}
@@ -1254,6 +1255,12 @@ func openDiffWindowWithPreload(a fyne.App, master bool, leftP, leftT, rightP, ri
 			closeOtherSecondaryDiffs(v)
 		}
 		registerSecondaryDiff(v)
+		// Diff vs HEAD (left read-only) and Historical Diff (both read-only)
+		// are bound to a specific repo's blobs; the legacy Compare Two Files…
+		// case has neither side read-only and is repo-independent.
+		if leftReadOnly || rightReadOnly {
+			registerRepoChildWindow(w)
+		}
 	}
 
 	windowShow(w)

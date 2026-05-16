@@ -4,13 +4,8 @@ KrankyBear GitExplorer - RELEASE NOTES
 Future ideas:
 - Directory-level rolled-up status (folders with modified children get a badge).
 - fsnotify-based auto-refresh when the worktree changes externally.
-- Filter / search bar above the file list (name filter, "only dirty",
-  "only untracked").
 - File-level history — right-click a tracked file → "Show history for this
   file…" — filtered Repo History showing only commits that touched it.
-- Search across history — filter the commit list by message substring or author.
-- Show-ignored-files toggle for .gitignore debugging.
-- Submodule indicator in the folder list (mark + click to open the submodule).
 - Stash list (read-only) — Tools → Show Stashes → click to diff.
 - Repo Health enrichment — add last-commit age, branch + tag counts to the
   existing stats + fsck dialog. (Stats + fsck verify + hints already
@@ -25,6 +20,93 @@ Future ideas:
   + last commit + date). Pure display; deliberately no checkout / create /
   delete buttons (those would cross the explorer-vs-manager line).
 
+Version 0.4.0 - May 15, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- "Recent ▾" toolbar button next to Open Folder. Pops up the same
+  recent-folders list as File → Open Recent Folder, anchored just below
+  the button — one click to jump between the 2-3 projects you're
+  actively poking at. Reuses the existing recents store; the empty case
+  shows a disabled "(no recent folders)" item.
+
+- Filter bar above the file list — one compact row with a name-substring
+  entry plus four checkboxes: "Only dirty", "Only untracked", "Only
+  ignored", "Show ignored". Applies to both the folder view and the
+  tracked-files tree. Filters reset on folder change so each project
+  starts from a clean slate.
+    • Name filter is case-insensitive substring match on the file's
+      short name. In the tracked-files tree, a directory whose name
+      matches pulls in all its descendants so you can drill in.
+    • Only dirty / Only untracked / Only ignored combine as an OR-union
+      when more than one is checked (e.g. checking dirty + ignored
+      shows both classes side by side).
+    • "Only ignored" implicitly bypasses the "Show ignored" gate so
+      auditing .gitignore is a single click: tick "Only ignored" and
+      the view collapses to just the ignored set — handy for spotting
+      files that shouldn't be ignored.
+    • Directories and the .git pinned row always pass the status gate
+      so you can keep navigating; the name filter still applies to them.
+      (Directory rollup is a separate future-ideas item.)
+
+- Ignored files hidden from the folder list by default — the "Show
+  ignored" checkbox in the new filter bar surfaces them when you need
+  to debug .gitignore behavior. Previously the folder list always
+  showed ignored entries with an "ignored" status label; now they're
+  filtered out until explicitly requested. Same toggle drives the
+  tracked-files tree. Implementation note: go-git's Status() omits
+  ignored files by default (matching the `git status` CLI), so the
+  worktree readout now consults the repo's .gitignore chain via
+  go-git's gitignore matcher to tag entries that aren't in the status
+  map — otherwise "Only ignored" matched zero files. Ignored
+  directories (assets/, bin/, etc.) follow the same hide-by-default
+  rule; "Show ignored" or "Only ignored" surfaces them.
+
+- Search across history — two filter fields above the commit list in
+  Repo History: "Message contains…" and "Author contains…". Both are
+  case-insensitive substring matches; the message field searches the
+  full commit message (subject + body), the author field searches the
+  author name.
+    • First time you type a query, the iterator drains the full repo
+      log into memory so matching is across all commits, not just the
+      currently-loaded page.
+    • "Load more commits" is disabled while a filter is active (all
+      commits are already loaded).
+    • Header switches from "N commits loaded" to "N of M commits
+      match" so you can see how aggressive the filter is.
+    • Typing is debounced ~150ms so a long query doesn't re-walk on
+      every character.
+    • Clear both fields to return to the unfiltered list.
+
+- Submodule indicator + recursive open — directories declared as
+  submodules in .gitmodules now show "submodule" in the Status column.
+  Clicking a submodule row descends into it as its own repo (go-git's
+  DetectDotGit resolves the submodule's gitfile transparently) and
+  adds the submodule path to your Recent Folders list so you can hop
+  back without re-walking the parent. Ancestor directories of a
+  submodule (e.g. a vendor/ wrapper folder) are labelled "contains
+  submodule" so they read distinctly from unrelated plain directories
+  before you click in. Both labels appear in the status header
+  tooltip and the View → Git Status Legend dialog.
+
+- Cross-repo switch prompt — when you're about to switch the explorer
+  to a different repo (or out of a repo entirely) while repo-bound
+  secondary windows are still open, a modal dialog now lists those
+  windows by title and asks what to do:
+    • Close them and continue (default, recommended) — fires Close()
+      on every registered window so they tear down cleanly via their
+      own intercepts.
+    • Keep them open and continue — proceeds with the switch; you
+      knowingly accept the mixed-repo state.
+    • Cancel — abandons the switch; the explorer stays where it is.
+  Tracked as repo-bound: Repo History, Diff vs HEAD, Historical Diff.
+  Compare Two Files… (legacy two-file diff) is deliberately excluded
+  since it's repo-independent. Repo Health, Scan Dependencies, the
+  Status Legend etc. are dialogs attached to the explorer window so
+  they share the explorer's lifecycle and don't need separate
+  tracking. Navigating within the same repo (clicking subdirs, Up,
+  etc.) doesn't trigger the prompt — only crossing a repo-root
+  boundary does.
 
 Version 0.3.0 - May 15, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
