@@ -35,13 +35,15 @@ git is tracking inside the repo.
 
 Day-to-day git work — committing, pushing, branching, rebasing — is
 expected to happen in your IDE or the git CLI. GitExplorer's value is
-in the visual at-a-glance, plus selective edits (planned: remove from
-worktree, remove from index only, diff against HEAD).
+in the visual at-a-glance plus selective edits: right-click any file
+row for Reveal, Copy path, Open in $EDITOR, Blame…, Diff against
+HEAD…, Show history for this file…, git add, Add to / Un-ignore in
+.gitignore, git rm -f, git rm --cached, Delete from disk.
 
 The two-pane diff tool that this app grew out of is still available
-via File → Compare Two Files… (kept around for general two-file
-diffs, and earmarked for a future "current file vs last-committed
-version" comparison).
+via File → Compare Two Files… and the new Diff toolbar button (and
+is wired into Diff against HEAD, Blame click-through, and the Repo
+History detail pane).
 
 OPENING A FOLDER
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -85,12 +87,45 @@ View → Toggle Tracked Files / Folder View.
 
 TOOLBAR
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Open Folder… — folder picker (Cmd/Ctrl+O)
+• Open Folder… — folder picker (Cmd/Ctrl+O).
+• Recent ▾ — popup list of recently-opened folders (matches
+  File → Open Recent Folder).
 • Up arrow — parent folder in folder view; back to folder view from
   tracked view.
 • Refresh — re-read the directory listing and re-run git status
-  (Cmd/Ctrl+R)
-• Tracked files / Back to folder — toggles between the two views
+  (Cmd/Ctrl+R).
+• Tracked files / Back to folder — toggles between the two views.
+• View ▾ — popup of data views (Blame…, Branches…, Contributors…,
+  Git Status Legend…, Remotes…, Repo Health…, Repo History…,
+  Stashes…, Tags…) for one-click access. Disabled when no repo is
+  loaded; Blame… is only enabled when a tracked, already-committed
+  file is selected in the folder list.
+• History — opens Repo History (same as View → Repo History…).
+• Health — opens Repo Health (same as View → Repo Health…).
+• Scan — runs Scan Dependencies (same as File → Scan Dependencies…).
+• Diff — opens the two-pane diff window for ad-hoc compare of any
+  two files from your filesystem (same as File → Compare Two
+  Files…). Always enabled — no repo required.
+
+BLAME
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Right-click a tracked file → "Blame…" (or open it from the View ▾
+toolbar dropdown when a tracked file is selected) to open a per-line
+annotated view of the file at HEAD: line number · short SHA ·
+YYYY-MM-DD · author · code, monospaced so the gutter columns align.
+
+Built on go-git's Blame(); compute is async with a progress dialog
+since walking the commit graph for attribution can take a few
+seconds on long-lived files.
+
+Click any row → opens a Historical Diff for that file at the blame
+commit vs its parent, both sides read-only. The blame becomes a
+natural entry point into "what changed on this line, and why".
+
+Same enable rule as Diff against HEAD: the file must be tracked and
+already committed at least once. Long source lines truncate with an
+ellipsis in the row — click through to the historical diff for the
+full content.
 
 WINDOWS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -99,8 +134,15 @@ WINDOWS
   exactly those; Show All restores that same set. Dialogs you'd
   already dismissed stay dismissed.
 • View → Light / Dark / System theme (theme is persisted across launches).
-• System tray (where supported): show/hide windows, Open Folder…,
-  Compare Two Files…, theme, help, about, check for updates, quit.
+• System tray (where supported), organised into sections:
+    - Hide / Show All Windows
+    - Non-view actions: Compare Two Files…, Open Folder…, Open
+      Recent Folder, Preferences…, Scan Dependencies…
+    - Data views: Branches…, Contributors…, Git Status Legend…,
+      Remotes…, Repo Health…, Repo History…, Stashes…, Tags…
+    - Theme: Dark / Light / System
+    - About, Check for Updates…, Help
+    - Quit
 
 COMPARE TWO FILES… (legacy diff tool)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -118,16 +160,21 @@ On startup the app may also check in the background about once every
 seven days; if a newer release exists, an update dialog appears.
 Failed background checks are silent.
 
-LIMITATIONS / KNOWN GAPS (and where we're heading)
+LIMITATIONS / KNOWN GAPS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Directory rows don't yet roll up the status of children (a folder
-  containing a modified file shows blank in the Status column).
-• No right-click row actions yet — planned: Reveal in Finder/Explorer,
-  Copy path, Open in $EDITOR, "git rm -f", "git rm --cached".
-• No "Recent folders" list yet — planned.
-• Worktree-vs-HEAD diff (using the Compare Two Files… view to show
-  current file on disk vs. the last-committed blob) — planned.
-• fsnotify-based auto-refresh on worktree changes — planned.
+• Remote-sync indicator's ahead/behind counts come from cached refs —
+  they only refresh when you fetch (CLI or git client). Run
+  'git fetch' from your terminal to update the cached counts.
+• Directory rollup excludes ignored files — use the file-level
+  "Only ignored" filter for .gitignore auditing.
+• fsnotify auto-refresh is non-recursive — changes deep inside a
+  subdirectory still need a manual Cmd/Ctrl+R.
+• Several less-common operations shell out to the 'git' CLI
+  (git rm --cached, git stash list, git count-objects, git fsck,
+  git ls-remote) — they require 'git' on PATH.
+• Blame on a long-lived file can take several seconds while go-git
+  walks the commit graph — the progress dialog has a "Hide
+  (continues in background)" option for that case.
 
 KEYBOARD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

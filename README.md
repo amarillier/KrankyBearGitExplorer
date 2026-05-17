@@ -51,6 +51,7 @@ Right-click any file or directory row in the folder view to act on it. Items ena
 
 **Diff & history** (tracked, already-committed files):
 
+- **Blame…** — see [Blame](#blame) below.
 - **Diff against HEAD…** — see [Diff against HEAD](#diff-against-head) below.
 - **Show history for this file…** — opens Repo History pre-filtered to commits that touched this path. See [Repo History](#repo-history).
 
@@ -65,6 +66,16 @@ Right-click any file or directory row in the folder view to act on it. Items ena
 
 - **git rm -f** — remove from worktree + index, with a confirm dialog (uses go-git's `wt.Remove`).
 - **git rm --cached** — remove from index only, keep the file on disk; pairs nicely with **Add to .gitignore** above.
+
+### Blame
+
+Right-click a tracked file → **Blame…** (or pick **Blame…** from the new **View ▾** toolbar dropdown when a tracked file is selected in the folder list) to open a per-line annotated view of the file at HEAD:
+
+- Each row shows **line number · short SHA · YYYY-MM-DD · author · code** in a monospaced layout so the gutter columns line up. Built on go-git's `Blame()`.
+- Compute is async — go-git walks the commit graph to attribute each line, which can take a few seconds on long-lived files. A "Hide (continues in background)" progress dialog appears while it runs; the window opens when blame completes.
+- Click any row → opens a Historical Diff for that file at the blame commit vs its parent, both sides read-only. Closes the loop with the existing history-detail flow: blame becomes the natural entry point into "what changed on this line and why".
+- Same enable rule as **Diff against HEAD**: the file must be tracked and already committed at least once. Untracked / ignored / freshly-added-staged rows have no Blame… menu entry, and the View ▾ dropdown's Blame… item is disabled when no eligible file is selected.
+- Long source lines truncate with an ellipsis in the row — click through to the historical diff for the full content.
 
 ### Diff against HEAD
 
@@ -101,7 +112,7 @@ Pure read-only: never invokes `git gc`, `prune`, or any other write operation; t
 
 ### Repo views: Branches / Tags / Remotes / Contributors / Stashes
 
-Five small read-only listings under the View menu (also on the tray). Pure display; no checkout / create / delete buttons — that line stays with the git CLI.
+Five small read-only listings under the View menu, the system tray, and the new **View ▾** toolbar dropdown (a one-click curated menu of all the data views: Blame…, Branches…, Contributors…, Git Status Legend…, Remotes…, Repo Health…, Repo History…, Stashes…, Tags…, alphabetised; disabled when no repo is loaded). Pure display; no checkout / create / delete buttons — that line stays with the git CLI.
 
 - **Branches…** / **Tags…** — name · short SHA · commit date · subject, sorted newest-first. Annotated tags resolved through their tag object to the underlying commit.
 - **Remotes…** — name · URL. A remote with separate fetch and push URLs gets one row per URL.
@@ -125,7 +136,7 @@ View → Scan Dependencies… (also on the tray and the **Scan** toolbar button)
 - Row-level merge actions (apply left→right, apply right→left, delete row).
 - Unified-patch export (file + clipboard).
 - Undo / redo on merge edits.
-- Reachable from the explorer's File menu and the system tray.
+- Reachable from the explorer's File menu, the system tray, and the **Diff** toolbar button (appended after Scan — always enabled, no repo required).
 
 ### Preferences
 
@@ -161,9 +172,9 @@ Tracked as repo-bound: **Repo History**, **Diff vs HEAD**, **Historical Diff**. 
 
 ## Status
 
-This is an active rebuild on top of [KrankyBearDiff](https://github.com/amarillier/KrankyBearDiff). The diff engine is intact and reachable from the File menu, the "Diff against HEAD" action, and the Repo History view. Current release: **v0.5.0** — see [ReleaseNotes.txt](ReleaseNotes.txt) for what landed.
+This is an active rebuild on top of [KrankyBearDiff](https://github.com/amarillier/KrankyBearDiff). The diff engine is intact and reachable from the File menu, the new **Diff** toolbar button, the "Diff against HEAD" action, the Blame viewer click-through, and the Repo History view. Current release: **v0.6.0** — see [ReleaseNotes.txt](ReleaseNotes.txt) for what landed.
 
-### Known gaps as of v0.5.0
+### Known gaps as of v0.6.0
 
 - The remote-sync indicator's ahead/behind counts come from cached refs — they only refresh when *you* fetch (CLI or git client). The async live probe checks reachability but doesn't actually fetch. Run `git fetch` from your terminal to update the cached counts.
 - Directory rollup excludes ignored files — go-git's `Status()` doesn't enumerate them and walking the gitignore matcher recursively for every directory listing would slow down large repos. Use the file-level **Only ignored** filter for `.gitignore` auditing.

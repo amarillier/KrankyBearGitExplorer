@@ -135,12 +135,12 @@ func (v *diffView) buildMainMenu() *fyne.MainMenu {
 
 	file := fyne.NewMenu("File",
 		fyne.NewMenuItem("Open Left File…", func() { v.openFileDialog(0) }),
-		fyne.NewMenuItem("Open Right File…", func() { v.openFileDialog(1) }),
 		openRecent,
+		fyne.NewMenuItem("Open Right File…", func() { v.openFileDialog(1) }),
 		fyne.NewMenuItemSeparator(),
+		saveBoth,
 		saveLeft,
 		saveRight,
-		saveBoth,
 		fyne.NewMenuItemSeparator(),
 		exportPatch,
 		fyne.NewMenuItemSeparator(),
@@ -233,9 +233,9 @@ func (v *diffView) buildMainMenu() *fyne.MainMenu {
 		undoMenuItem(v),
 		redoMenuItem(v),
 		fyne.NewMenuItemSeparator(),
+		copyAligned,
 		copyLeft,
 		copyRight,
-		copyAligned,
 		copyUnifiedPatch,
 		fyne.NewMenuItemSeparator(),
 		applyLR,
@@ -270,25 +270,25 @@ func (v *diffView) buildMainMenu() *fyne.MainMenu {
 	swapSides.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyX, Modifier: fyne.KeyModifierShortcutDefault | fyne.KeyModifierShift}
 
 	view := fyne.NewMenu("View",
-		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItem("Hide All Windows", func() { hideAllAppWindows(v.app) }),
+		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItemSeparator(),
-		prevChange,
-		nextChange,
-		jumpStart,
 		jumpEnd,
+		jumpStart,
+		nextChange,
+		prevChange,
 		swapSides,
 		fyne.NewMenuItemSeparator(),
 		lineNumsMenuItem(v),
 		showWhitespaceMenuItem(v),
 		syncScrollMenuItem(v),
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Light Theme", func() {
-			setLightTheme(v.app)
-			v.refreshDiffLists()
-		}),
 		fyne.NewMenuItem("Dark Theme", func() {
 			setDarkTheme(v.app)
+			v.refreshDiffLists()
+		}),
+		fyne.NewMenuItem("Light Theme", func() {
+			setLightTheme(v.app)
 			v.refreshDiffLists()
 		}),
 		fyne.NewMenuItem("System Theme", func() {
@@ -298,9 +298,9 @@ func (v *diffView) buildMainMenu() *fyne.MainMenu {
 	)
 
 	help := fyne.NewMenu("Help",
-		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
 		fyne.NewMenuItem("About", func() { showAbout(v.app) }),
 		fyne.NewMenuItem("Check for Updates…", func() { checkForUpdates(v.app) }),
+		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
 	)
 
 	return fyne.NewMainMenu(file, edit, view, help)
@@ -319,22 +319,22 @@ func (v *diffView) buildTrayMenu() *fyne.Menu {
 	trayExportPatch := fyne.NewMenuItem("Export unified patch…", func() { v.exportUnifiedPatch() })
 
 	return fyne.NewMenu(appName,
-		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItem("Hide All Windows", func() { hideAllAppWindows(v.app) }),
+		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItemSeparator(),
+		trayExportPatch,
 		fyne.NewMenuItem("Open Left File…", func() { v.openFileDialog(0) }),
 		fyne.NewMenuItem("Open Right File…", func() { v.openFileDialog(1) }),
-		trayExportPatch,
 		trayRecentHint,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, v) }),
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Light Theme", func() {
-			setLightTheme(v.app)
-			v.refreshDiffLists()
-		}),
 		fyne.NewMenuItem("Dark Theme", func() {
 			setDarkTheme(v.app)
+			v.refreshDiffLists()
+		}),
+		fyne.NewMenuItem("Light Theme", func() {
+			setLightTheme(v.app)
 			v.refreshDiffLists()
 		}),
 		fyne.NewMenuItem("System Theme", func() {
@@ -342,9 +342,9 @@ func (v *diffView) buildTrayMenu() *fyne.Menu {
 			v.refreshDiffLists()
 		}),
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
 		fyne.NewMenuItem("About", func() { showAbout(v.app) }),
 		fyne.NewMenuItem("Check for Updates…", func() { checkForUpdates(v.app) }),
+		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() { quitFromMainWindow(v) }),
 	)
