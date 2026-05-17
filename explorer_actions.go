@@ -86,6 +86,14 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 	})
 	openEditor.Disabled = e.isDir
 
+	blame := fyne.NewMenuItem("Blame…", func() {
+		openBlameWindow(v.app, v.win, v.repo, v.repoRoot, e.rel)
+	})
+	// Same enable condition as Diff vs HEAD: blame on a never-committed
+	// file would have nothing to attribute, and untracked/ignored rows
+	// aren't in the index for go-git to walk.
+	blame.Disabled = !canDiffHEAD
+
 	diffHEAD := fyne.NewMenuItem("Diff against HEAD…", func() {
 		v.diffAgainstHEAD(e.rel, absPath)
 	})
@@ -129,20 +137,21 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 	deleteDisk.Disabled = !canDeleteDisk
 
 	items := []*fyne.MenuItem{
-		reveal,
 		copyPath,
 		openEditor,
+		reveal,
 		fyne.NewMenuItemSeparator(),
+		blame,
 		diffHEAD,
 		showHistory,
 		fyne.NewMenuItemSeparator(),
-		gitAdd,
 		addIgnore,
+		gitAdd,
 		unignore,
 		fyne.NewMenuItemSeparator(),
+		deleteDisk,
 		gitRm,
 		gitRmCached,
-		deleteDisk,
 	}
 	menu := fyne.NewMenu("", items...)
 

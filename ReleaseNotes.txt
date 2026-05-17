@@ -2,8 +2,80 @@
 KrankyBear GitExplorer - RELEASE NOTES
 ═══════════════════════════════════════════════════════════════════════════════
 Future ideas:
-(empty for now — v0.5.0 cleared the existing list; new ideas land here as
-they come up.)
+- Reflog viewer — read-only "here's where HEAD has been" panel; pure inspection, very on-brand for an explorer.
+- "What's new since I last looked" — persist HEAD SHA per recent-repo on close; on reopen show a banner "N new commits since you last opened this repo" with one-click compare against last-seen HEAD.
+- Signed-commit badges in Repo History — small ✓ / ? / ✗ glyph using go-git's commit.Verify(), plus a "Signature: valid / unsigned / unverifiable" line in the detail pane.
+-
+
+Version 0.6.0 - May 17, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Blame viewer — right-click a tracked file → "Blame…" (or use the
+  new View ▾ toolbar dropdown) opens a per-line annotated view of the
+  file at HEAD. Each row shows line number · short SHA · YYYY-MM-DD ·
+  author · code in a monospaced layout so the gutter columns line up.
+  Built on go-git's Blame().
+    • Async compute — go-git walks the commit graph to attribute each
+      line, which can take a few seconds on long-lived files. A
+      "Hide (continues in background)" progress dialog appears while
+      it runs; the window opens when blame completes.
+    • Click any row → opens a Historical Diff for that file at the
+      blame commit vs its parent, both sides read-only. Closes the
+      loop with the existing history-detail flow: blame becomes the
+      natural entry point into "what changed on this line and why".
+    • Same enable rule as Diff against HEAD — the file must be
+      tracked and already committed at least once. Untracked /
+      ignored / freshly-added-staged rows have no Blame… menu entry,
+      and the View ▾ dropdown's Blame… item is disabled when no
+      eligible file is selected.
+    • Window title reads "Blame: <repo> — <relative-path>" so a
+      per-file blame stays distinguishable from another open on a
+      different file. Long source lines truncate with an ellipsis;
+      click-through to the historical diff for the full content.
+
+- View ▾ toolbar button — new dropdown next to "Tracked files" giving
+  one-click access to the data views: Blame…, Branches…,
+  Contributors…, Git Status Legend…, Remotes…, Repo Health…, Repo
+  History…, Stashes…, Tags…. Alphabetised. Same handlers as the View
+  menu and tray; disabled when no repo is loaded.
+    • Curated to data views only — Scan Dependencies, Compare Two
+      Files, Preferences, theme toggles, navigation actions stay out
+      (they have their own toolbar buttons or live elsewhere).
+    • Blame… in this dropdown is enabled only when a tracked,
+      already-committed file is selected in the folder list — the
+      right-click context menu remains the primary entry point.
+
+- Diff toolbar button — appended after Scan, opens the two-pane diff
+  window (same handler as File → Compare Two Files…) for ad-hoc
+  comparison of any two files from your filesystem. Always enabled —
+  the diff tool doesn't need a repo. Closes a gap noticed while
+  curating the View ▾ button: the diff tool GitExplorer grew out of
+  was easy to forget about because it was menu-only.
+
+🔧 CHANGED
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Menu items alphabetised throughout — main menu bar (File / Edit /
+  View / Help), system tray menu, and the right-click row context
+  menu now order items alphabetically within each separator-bounded
+  section. Makes the right entry far easier to spot at a glance once
+  any menu grows beyond a handful of items. Deeply-conventional
+  pairs like Undo / Redo are left in their conventional order
+  (Cmd/Ctrl+Z then Cmd/Ctrl+Shift+Z muscle memory wins over strict
+  alpha).
+
+- Scan Dependencies moved from View menu to File menu — it's an
+  action, not a data view, and now sits next to Compare Two Files… in
+  the File menu (and at its alphabetical spot in the tray's non-view
+  section). Still reachable from the Scan toolbar button.
+
+- Tray menu restructured — the previously single "everything" middle
+  section is now two sections separated by a divider: non-view
+  actions (Compare Two Files…, Open Folder…, Open Recent Folder,
+  Preferences…, Scan Dependencies…) above the line, then data views
+  (Branches…, Contributors…, Git Status Legend…, Remotes…, Repo
+  Health…, Repo History…, Stashes…, Tags…) below it. Easier to find
+  one or the other without scanning the whole list.
 
 Version 0.5.0 - May 16, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

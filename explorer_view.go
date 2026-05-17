@@ -56,6 +56,16 @@ type explorerView struct {
 	historyBtn  *ttwidget.Button
 	healthBtn   *ttwidget.Button
 	depScanBtn  *ttwidget.Button
+	viewBtn     *ttwidget.Button
+	diffBtn     *ttwidget.Button
+
+	// selectedFileRel / selectedFileAbs hold the repo-relative and on-disk
+	// paths of the currently-selected *file* row in the folder list. Reset
+	// whenever the selection moves off a file (directory click, .git click,
+	// folder reload, or an UnselectAll). Read by the View ▾ button's
+	// "Blame…" item to decide whether to enable.
+	selectedFileRel string
+	selectedFileAbs string
 
 	// Filter bar — applies to both folder view and tracked-files tree.
 	filter                 explorerFilter
@@ -235,7 +245,21 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.depScanBtn.SetToolTip("Run dep-scan against this folder — multi-ecosystem dependency vulnerability scan (osv-scanner + govulncheck)")
 	v.depScanBtn.Importance = widget.LowImportance
 
-	toolRow := container.NewHBox(browseBtn, recentBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn, v.historyBtn, v.healthBtn, v.depScanBtn)
+	v.diffBtn = ttwidget.NewButtonWithIcon("Diff", theme.ContentCopyIcon(), func() { openDiffWindow(v.app, false) })
+	v.diffBtn.SetToolTip("Open the two-pane diff window — pick any two files to compare side-by-side")
+	v.diffBtn.Importance = widget.LowImportance
+
+	v.viewBtn = ttwidget.NewButtonWithIcon("View ▾", theme.VisibilityIcon(), func() {
+		menu := v.buildViewDropdownMenu()
+		pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(v.viewBtn)
+		pos.Y += v.viewBtn.Size().Height
+		widget.ShowPopUpMenuAtPosition(menu, v.win.Canvas(), pos)
+	})
+	v.viewBtn.SetToolTip("Open a repo data view (Blame, Branches, Contributors, Git Status Legend, Remotes, Repo Health, Repo History, Stashes, Tags)")
+	v.viewBtn.Importance = widget.LowImportance
+	v.viewBtn.Disable()
+
+	toolRow := container.NewHBox(browseBtn, recentBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn, v.viewBtn, v.historyBtn, v.healthBtn, v.depScanBtn, v.diffBtn)
 
 	v.filterEntry = widget.NewEntry()
 	v.filterEntry.SetPlaceHolder("Filter by name…")
@@ -399,15 +423,21 @@ func (v *explorerView) buildList() *widget.List {
 	)
 	lst.OnSelected = func(id widget.ListItemID) {
 		if id < 0 || id >= len(v.entries) {
+			v.selectedFileRel = ""
+			v.selectedFileAbs = ""
 			return
 		}
 		e := v.entries[id]
 		if e.isGit {
+			v.selectedFileRel = ""
+			v.selectedFileAbs = ""
 			v.setMode(1)
 			lst.UnselectAll()
 			return
 		}
 		if e.isDir {
+			v.selectedFileRel = ""
+			v.selectedFileAbs = ""
 			target := filepath.Join(v.currentPath, e.name)
 			// Submodules are their own repos; promote to recents on entry so
 			// the user can hop back without re-navigating from the parent.
@@ -419,6 +449,13 @@ func (v *explorerView) buildList() *widget.List {
 			lst.UnselectAll()
 			return
 		}
+		// File row selected — remember it so View ▾ → Blame… can act on it.
+		v.selectedFileRel = e.rel
+		v.selectedFileAbs = filepath.Join(v.currentPath, e.name)
+	}
+	lst.OnUnselected = func(_ widget.ListItemID) {
+		v.selectedFileRel = ""
+		v.selectedFileAbs = ""
 	}
 	return lst
 }
@@ -607,6 +644,8 @@ func (v *explorerView) loadFolder(path string) {
 
 func (v *explorerView) doLoadFolder(abs string) {
 	v.currentPath = abs
+	v.selectedFileRel = ""
+	v.selectedFileAbs = ""
 
 	v.resetFilters()
 
@@ -761,6 +800,7 @@ func (v *explorerView) refresh() {
 		v.modeBtn.Enable()
 		v.historyBtn.Enable()
 		v.healthBtn.Enable()
+		v.viewBtn.Enable()
 	} else {
 		v.branchLabel.SetText("(not a git repository)")
 		v.statusLabel.SetText("")
@@ -769,6 +809,7 @@ func (v *explorerView) refresh() {
 		v.modeBtn.Disable()
 		v.historyBtn.Disable()
 		v.healthBtn.Disable()
+		v.viewBtn.Disable()
 	}
 
 	if v.list != nil {
@@ -1144,12 +1185,15 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	compare := fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) })
 	prefs := fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, nil) })
 
+	scanDeps := fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() })
+
 	file := fyne.NewMenu("File",
 		openFolder,
 		openRecent,
 		refresh,
 		fyne.NewMenuItemSeparator(),
 		compare,
+		scanDeps,
 		fyne.NewMenuItemSeparator(),
 		prefs,
 		fyne.NewMenuItemSeparator(),
@@ -1165,32 +1209,30 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	remotes := fyne.NewMenuItem("Remotes…", func() { v.showRemotes() })
 	contributors := fyne.NewMenuItem("Contributors…", func() { v.showContributors() })
 	stashes := fyne.NewMenuItem("Stashes…", func() { v.showStashes() })
-	scanDeps := fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() })
 
 	view := fyne.NewMenu("View",
-		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItem("Hide All Windows", func() { hideAllAppWindows(v.app) }),
+		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItemSeparator(),
-		toggleView,
-		history,
-		health,
 		branches,
-		tags,
-		remotes,
 		contributors,
-		stashes,
-		scanDeps,
 		legend,
+		remotes,
+		health,
+		history,
+		stashes,
+		tags,
+		toggleView,
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Light Theme", func() { setLightTheme(v.app) }),
 		fyne.NewMenuItem("Dark Theme", func() { setDarkTheme(v.app) }),
+		fyne.NewMenuItem("Light Theme", func() { setLightTheme(v.app) }),
 		fyne.NewMenuItem("System Theme", func() { setSystemTheme(v.app) }),
 	)
 
 	help := fyne.NewMenu("Help",
-		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
 		fyne.NewMenuItem("About", func() { showAbout(v.app) }),
 		fyne.NewMenuItem("Check for Updates…", func() { checkForUpdates(v.app) }),
+		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
 	)
 
 	return fyne.NewMainMenu(file, view, help)
@@ -1243,6 +1285,63 @@ func (v *explorerView) showFileHistory(rel string) {
 		return
 	}
 	openHistoryWindow(v.app, v.repo, v.repoRoot, v.win, rel)
+}
+
+// canBlameSelection reports whether the currently-selected folder-list row
+// is a tracked, already-committed file — the same enable rule used for
+// "Diff against HEAD" in the right-click context menu. Used by the View ▾
+// dropdown to decide whether the Blame… entry is enabled.
+func (v *explorerView) canBlameSelection() bool {
+	if v.repo == nil || v.repoRoot == "" || v.selectedFileRel == "" {
+		return false
+	}
+	for _, e := range v.entries {
+		if e.rel != v.selectedFileRel || e.isDir {
+			continue
+		}
+		if !isTrackedStatus(e.status) {
+			return false
+		}
+		if strings.HasPrefix(e.status, "A") || e.status == "??" {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// showBlameForSelection is the View ▾ → Blame… entry point. The right-click
+// context menu has its own direct call to openBlameWindow with the row's
+// rel; this handles the case where the user reaches Blame through the
+// toolbar dropdown instead.
+func (v *explorerView) showBlameForSelection() {
+	if !v.canBlameSelection() {
+		return
+	}
+	openBlameWindow(v.app, v.win, v.repo, v.repoRoot, v.selectedFileRel)
+}
+
+// buildViewDropdownMenu builds the popup menu shown by the toolbar's
+// "View ▾" button. Curated to the data views Allan wants quick access to:
+// per-file (Blame…) plus repo-level (Branches…, Contributors…, Git Status
+// Legend…, Remotes…, Repo Health…, Repo History…, Stashes…, Tags…),
+// alphabetised. Excludes toggles already on the toolbar (Tracked Files /
+// Folder View, Scan Dependencies), theme switches, and pure navigation.
+func (v *explorerView) buildViewDropdownMenu() *fyne.Menu {
+	blame := fyne.NewMenuItem("Blame…", func() { v.showBlameForSelection() })
+	blame.Disabled = !v.canBlameSelection()
+
+	return fyne.NewMenu("",
+		blame,
+		fyne.NewMenuItem("Branches…", func() { v.showBranches() }),
+		fyne.NewMenuItem("Contributors…", func() { v.showContributors() }),
+		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
+		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
+		fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() }),
+		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
+		fyne.NewMenuItem("Stashes…", func() { v.showStashes() }),
+		fyne.NewMenuItem("Tags…", func() { v.showTags() }),
+	)
 }
 
 // openRepoHealth pops the read-only Repo Health dialog (object-database
@@ -1365,30 +1464,31 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 	trayRecentFolders.ChildMenu = v.buildRecentFoldersSubmenu()
 
 	return fyne.NewMenu(appName,
-		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItem("Hide All Windows", func() { hideAllAppWindows(v.app) }),
+		fyne.NewMenuItem("Show All Windows", func() { bringAllAppWindowsToFront(v.app, v.win) }),
 		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) }),
 		fyne.NewMenuItem("Open Folder…", func() { v.browseFolder() }),
 		trayRecentFolders,
-		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
-		fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() }),
-		fyne.NewMenuItem("Branches…", func() { v.showBranches() }),
-		fyne.NewMenuItem("Tags…", func() { v.showTags() }),
-		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
-		fyne.NewMenuItem("Contributors…", func() { v.showContributors() }),
-		fyne.NewMenuItem("Stashes…", func() { v.showStashes() }),
-		fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() }),
-		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
-		fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) }),
 		fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, nil) }),
+		fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() }),
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Light Theme", func() { setLightTheme(v.app) }),
+		fyne.NewMenuItem("Branches…", func() { v.showBranches() }),
+		fyne.NewMenuItem("Contributors…", func() { v.showContributors() }),
+		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
+		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
+		fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() }),
+		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
+		fyne.NewMenuItem("Stashes…", func() { v.showStashes() }),
+		fyne.NewMenuItem("Tags…", func() { v.showTags() }),
+		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Dark Theme", func() { setDarkTheme(v.app) }),
+		fyne.NewMenuItem("Light Theme", func() { setLightTheme(v.app) }),
 		fyne.NewMenuItem("System Theme", func() { setSystemTheme(v.app) }),
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
 		fyne.NewMenuItem("About", func() { showAbout(v.app) }),
 		fyne.NewMenuItem("Check for Updates…", func() { checkForUpdates(v.app) }),
+		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() { v.quitApp() }),
 	)
