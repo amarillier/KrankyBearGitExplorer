@@ -45,6 +45,32 @@ via File → Compare Two Files… and the new Diff toolbar button (and
 is wired into Diff against HEAD, Blame click-through, and the Repo
 History detail pane).
 
+REQUIREMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Most of the explorer runs against an embedded go-git library
+directly (folder status, branches, tags, history walk, blame, diff
+against HEAD), but a handful of operations shell out to the system
+'git' binary for CLI fidelity and access to bits go-git doesn't
+expose. These features need 'git' on PATH:
+
+• 'git stash list'        — Stashes view
+• 'git reflog'            — Reflog viewer
+• 'git log --format=%G?'  — signed-commit badges in Repo History
+• 'git rev-list --count'  — "What's new since I last looked" banner
+• 'git fsck'              — Repo Health verify summary
+• 'git count-objects -v'  — Repo Health object DB statistics
+• 'git ls-remote'         — remote-sync indicator in the repo header
+• 'git rm --cached'       — right-click context menu
+
+Without 'git' installed the explorer's core (folder view,
+tracked-files view, Blame, Diff against HEAD, Repo History, etc.)
+still works — the features above degrade silently or show a
+one-line error in the relevant dialog.
+
+Optional: a 'dep-scan' skill or a repo-vendored 'dep-scan.sh' /
+'dep-scan.ps1' for the Scan Dependencies button (see
+README_DEPSCAN.md in the repo).
+
 OPENING A FOLDER
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • File → Open Folder… (Cmd/Ctrl+O), or the Open Folder… button in the toolbar.
@@ -59,6 +85,29 @@ When the opened folder is inside a git repository the header shows:
 • the absolute path of the current folder
 • the current branch name (or "(no commits)" / "(not a git repository)")
 • a clean vs. dirty/untracked file count for the whole worktree
+
+"WHAT'S NEW SINCE I LAST LOOKED" BANNER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A one-row strip just above the filter bar appears when you open a
+repo whose HEAD has advanced since your last visit:
+
+  "7 new commits since you last opened this repo (since abc1234)."
+                                            [Compare] [Dismiss]
+
+• Compare → opens Repo History with the stored marker pre-set as
+  the compare base. One click to see file-by-file what changed
+  between last visit and now.
+• Dismiss → hides the banner and marks current HEAD as "seen".
+
+The per-repo marker is persisted via Fyne preferences (~50 bytes
+per repo). First visit to a repo silently captures the marker — no
+banner on a repo's debut, only when something changed between
+visits. The marker also advances on cross-repo navigation, window
+close, and Quit, so closing the explorer counts as implicit
+acknowledgement.
+
+Force-push, pruned commits, or HEAD-behind-marker edge cases
+silently re-anchor to current HEAD and skip the banner.
 
 FOLDER VIEW (default)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -96,10 +145,10 @@ TOOLBAR
   (Cmd/Ctrl+R).
 • Tracked files / Back to folder — toggles between the two views.
 • View ▾ — popup of data views (Blame…, Branches…, Contributors…,
-  Git Status Legend…, Remotes…, Repo Health…, Repo History…,
-  Stashes…, Tags…) for one-click access. Disabled when no repo is
-  loaded; Blame… is only enabled when a tracked, already-committed
-  file is selected in the folder list.
+  Git Status Legend…, Reflog…, Remotes…, Repo Health…, Repo
+  History…, Stashes…, Tags…) for one-click access. Disabled when
+  no repo is loaded; Blame… is only enabled when a tracked,
+  already-committed file is selected in the folder list.
 • History — opens Repo History (same as View → Repo History…).
 • Health — opens Repo Health (same as View → Repo Health…).
 • Scan — runs Scan Dependencies (same as File → Scan Dependencies…).
@@ -127,6 +176,50 @@ already committed at least once. Long source lines truncate with an
 ellipsis in the row — click through to the historical diff for the
 full content.
 
+REFLOG VIEWER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+View → Reflog… (also in the View ▾ toolbar dropdown and the tray's
+data-views section) opens a read-only "here's where HEAD has been"
+panel for the current repo. Master/detail layout:
+
+• Left pane — list of reflog entries: HEAD@{N} · date · action
+  (commit / checkout / reset / rebase / pull / ...) · message.
+• Right pane — selected entry's commit detail + file list (changes
+  vs the commit's parent).
+• Click a file in the right pane → opens a Historical Diff (file
+  at that commit vs its parent, both sides read-only). Same flow
+  as Repo History's detail pane.
+
+Unreachable commits still resolve — entries pointing at commits
+that fell out of the regular log (after a hard reset or rebase)
+remain in the object DB because the reflog itself keeps them alive.
+Useful for "I rebased and lost something" recovery scenarios. If
+the commit truly isn't there (pruned), the detail pane shows a
+graceful fallback message.
+
+SIGNED-COMMIT BADGES IN REPO HISTORY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The Repo History window's left-pane commit list now shows a small
+gutter glyph for each commit's signature status:
+• ✓  valid signature
+• ✗  bad / expired / revoked
+• ?  signed but unverifiable on this machine (the signer's public
+     key isn't in your local keyring)
+• (blank) — unsigned
+
+The detail pane gets a matching italic "Signature: …" line between
+the header and the commit message.
+
+Built on 'git log --format=%G?' so it uses your local GPG/SSH
+configuration. To turn a "?" into a "✓" for a commit you trust,
+import the signer's public key — e.g. 'gpg --recv-keys <keyid>' or
+your existing keyserver workflow.
+
+Loaded asynchronously in the background — the window opens
+immediately and badges populate when the git log walk completes
+(typically <1s, a few seconds on huge repos). Graceful degrade if
+'git' isn't on PATH (window still works, no badges).
+
 WINDOWS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • View → Show All Windows / Hide All Windows (also on the system tray):
@@ -139,7 +232,8 @@ WINDOWS
     - Non-view actions: Compare Two Files…, Open Folder…, Open
       Recent Folder, Preferences…, Scan Dependencies…
     - Data views: Branches…, Contributors…, Git Status Legend…,
-      Remotes…, Repo Health…, Repo History…, Stashes…, Tags…
+      Reflog…, Remotes…, Repo Health…, Repo History…, Stashes…,
+      Tags…
     - Theme: Dark / Light / System
     - About, Check for Updates…, Help
     - Quit
@@ -169,12 +263,21 @@ LIMITATIONS / KNOWN GAPS
   "Only ignored" filter for .gitignore auditing.
 • fsnotify auto-refresh is non-recursive — changes deep inside a
   subdirectory still need a manual Cmd/Ctrl+R.
-• Several less-common operations shell out to the 'git' CLI
-  (git rm --cached, git stash list, git count-objects, git fsck,
-  git ls-remote) — they require 'git' on PATH.
+• Several operations shell out to the 'git' CLI — see the
+  REQUIREMENTS section above for the full list.
 • Blame on a long-lived file can take several seconds while go-git
   walks the commit graph — the progress dialog has a "Hide
   (continues in background)" option for that case.
+• "What's new since I last looked" banner re-evaluates only on
+  repo open / cross-repo switch, not on fsnotify auto-refresh
+  inside the same repo. A CLI commit made while the explorer is
+  open updates the file list immediately (via fsnotify) but won't
+  pop the banner mid-session — the marker advances on close, so
+  it's correct end-to-end.
+• Signed-commit badges in Repo History reflect what 'git log
+  --format=%G?' reports against your local GPG/SSH keyring — a
+  '?' means the signature is there but the signer's public key
+  isn't in your local keyring, NOT that the signature is invalid.
 
 KEYBOARD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

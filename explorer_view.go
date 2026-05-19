@@ -24,6 +24,7 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 )
 
 // explorerView is the directory + repo explorer main window.
@@ -66,6 +67,14 @@ type explorerView struct {
 	// "Blame…" item to decide whether to enable.
 	selectedFileRel string
 	selectedFileAbs string
+
+	// "What's new since I last looked" banner above the filter bar.
+	// whatsNewBaseSHA is the stored marker SHA captured when the banner
+	// is shown — used by the Compare button to pre-set the Repo History
+	// compare base. See whats_new.go for the full flow.
+	whatsNewRow     *fyne.Container
+	whatsNewLabel   *widget.Label
+	whatsNewBaseSHA plumbing.Hash
 
 	// Filter bar — applies to both folder view and tracked-files tree.
 	filter                 explorerFilter
@@ -138,6 +147,7 @@ func openExplorerWindow(a fyne.App, master bool) *explorerView {
 	if master {
 		w.SetMaster()
 		w.SetCloseIntercept(func() {
+			v.advanceLastSeenHeadForCurrentRepo()
 			if v.watcher != nil {
 				v.watcher.stop()
 				v.watcher = nil
@@ -147,6 +157,7 @@ func openExplorerWindow(a fyne.App, master bool) *explorerView {
 		})
 	} else {
 		w.SetCloseIntercept(func() {
+			v.advanceLastSeenHeadForCurrentRepo()
 			if v.watcher != nil {
 				v.watcher.stop()
 				v.watcher = nil
@@ -170,6 +181,7 @@ func openExplorerWindow(a fyne.App, master bool) *explorerView {
 }
 
 func (v *explorerView) quitApp() {
+	v.advanceLastSeenHeadForCurrentRepo()
 	saveMainWindowGeometryIfEnabled(v.app, v.win)
 	hideAuxiliaryWindows()
 	v.app.Quit()
@@ -255,7 +267,7 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 		pos.Y += v.viewBtn.Size().Height
 		widget.ShowPopUpMenuAtPosition(menu, v.win.Canvas(), pos)
 	})
-	v.viewBtn.SetToolTip("Open a repo data view (Blame, Branches, Contributors, Git Status Legend, Remotes, Repo Health, Repo History, Stashes, Tags)")
+	v.viewBtn.SetToolTip("Open a repo data view (Blame, Branches, Contributors, Git Status Legend, Reflog, Remotes, Repo Health, Repo History, Stashes, Tags)")
 	v.viewBtn.Importance = widget.LowImportance
 	v.viewBtn.Disable()
 
@@ -303,6 +315,8 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 		v.filterEntry,
 	)
 
+	v.whatsNewRow = v.buildWhatsNewBanner()
+
 	headerLabels := buildExplorerHeaderRow()
 	v.list = v.buildList()
 	v.tree = v.buildTree()
@@ -311,7 +325,7 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	listWithHeader := container.NewBorder(headerLabels, nil, nil, nil, v.list)
 	v.contentArea.Add(listWithHeader)
 
-	topBar := container.NewVBox(headerRow, toolRow, filterRow, widget.NewSeparator())
+	topBar := container.NewVBox(headerRow, toolRow, v.whatsNewRow, filterRow, widget.NewSeparator())
 	return container.NewBorder(topBar, nil, nil, nil, v.contentArea)
 }
 
@@ -643,6 +657,16 @@ func (v *explorerView) loadFolder(path string) {
 }
 
 func (v *explorerView) doLoadFolder(abs string) {
+	// If we're leaving a previously-loaded repo for a different one,
+	// advance the prior repo's "last seen HEAD" marker so closing-and-
+	// reopening it later doesn't re-show the banner for commits the user
+	// already saw on this trip.
+	prevRepoRoot := v.repoRoot
+	targetRoot := findRepoRoot(abs)
+	if prevRepoRoot != "" && prevRepoRoot != targetRoot {
+		v.advanceLastSeenHeadForCurrentRepo()
+	}
+
 	v.currentPath = abs
 	v.selectedFileRel = ""
 	v.selectedFileAbs = ""
@@ -662,6 +686,7 @@ func (v *explorerView) doLoadFolder(abs string) {
 		v.setMode(0)
 	}
 	v.refresh()
+	v.evaluateWhatsNew()
 	v.restartWatcher()
 }
 
@@ -1207,6 +1232,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	branches := fyne.NewMenuItem("Branches…", func() { v.showBranches() })
 	tags := fyne.NewMenuItem("Tags…", func() { v.showTags() })
 	remotes := fyne.NewMenuItem("Remotes…", func() { v.showRemotes() })
+	reflog := fyne.NewMenuItem("Reflog…", func() { v.openReflog() })
 	contributors := fyne.NewMenuItem("Contributors…", func() { v.showContributors() })
 	stashes := fyne.NewMenuItem("Stashes…", func() { v.showStashes() })
 
@@ -1217,6 +1243,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		branches,
 		contributors,
 		legend,
+		reflog,
 		remotes,
 		health,
 		history,
@@ -1287,6 +1314,19 @@ func (v *explorerView) showFileHistory(rel string) {
 	openHistoryWindow(v.app, v.repo, v.repoRoot, v.win, rel)
 }
 
+// openReflog pops the read-only Reflog viewer for the current repo. Same
+// "must be inside a repo" guard as openHistory / openRepoHealth — the
+// reflog is repo-scoped and would otherwise just shell-out-error.
+func (v *explorerView) openReflog() {
+	if v.repo == nil || v.repoRoot == "" {
+		dialog.ShowInformation("No repository",
+			"Open a folder that is inside a git repository first, then try again.",
+			v.win)
+		return
+	}
+	openReflogWindow(v.app, v.win, v.repo, v.repoRoot)
+}
+
 // canBlameSelection reports whether the currently-selected folder-list row
 // is a tracked, already-committed file — the same enable rule used for
 // "Diff against HEAD" in the right-click context menu. Used by the View ▾
@@ -1336,6 +1376,7 @@ func (v *explorerView) buildViewDropdownMenu() *fyne.Menu {
 		fyne.NewMenuItem("Branches…", func() { v.showBranches() }),
 		fyne.NewMenuItem("Contributors…", func() { v.showContributors() }),
 		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
+		fyne.NewMenuItem("Reflog…", func() { v.openReflog() }),
 		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
 		fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() }),
 		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
@@ -1476,6 +1517,7 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		fyne.NewMenuItem("Branches…", func() { v.showBranches() }),
 		fyne.NewMenuItem("Contributors…", func() { v.showContributors() }),
 		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
+		fyne.NewMenuItem("Reflog…", func() { v.openReflog() }),
 		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
 		fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() }),
 		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
