@@ -6,6 +6,20 @@ The goal isn't to replace the git CLI or your IDE's git integration — those st
 
 The two-pane side-by-side diff tool [KrankyBearDiff](https://github.com/amarillier/KrankyBearDiff) this app grew out of is preserved as a secondary window (File → Compare Two Files…) and is also wired into the new "Diff against HEAD" workflow. Note that [KrankyBearDiff](https://github.com/amarillier/KrankyBearDiff) is still also available as a totally separate application.
 
+## Requirements
+
+- **`git` on PATH** — most of the explorer runs against go-git directly (folder status, branches, tags, history walk, blame, diff against HEAD), but a handful of operations shell out to the system `git` binary for CLI fidelity and access to bits go-git doesn't expose:
+  - `git stash list` (Stashes view)
+  - `git reflog` (Reflog viewer)
+  - `git log --format=%G?` (signed-commit badges in Repo History)
+  - `git rev-list --count` ("What's new since I last looked" banner)
+  - `git fsck`, `git count-objects` (Repo Health)
+  - `git ls-remote` (remote-sync indicator in the repo header)
+  - `git rm --cached` (right-click context menu)
+
+  Without `git` on PATH the explorer's core (folder view, tracked-files view, Blame, Diff against HEAD, Repo History, etc.) still works — the features above degrade silently or display a one-line error in the relevant dialog.
+- **Optional**: a `dep-scan` skill or repo-vendored `dep-scan.sh` / `dep-scan.ps1` for the **Scan Dependencies** button — see [README_DEPSCAN.md](README_DEPSCAN.md).
+
 ## Features
 
 ### Folder view
@@ -17,6 +31,7 @@ The two-pane side-by-side diff tool [KrankyBearDiff](https://github.com/amarilli
 - The `.git` directory is hidden from the folder list by default — use the **Tracked files** toolbar button (or View → Toggle Tracked Files / Folder View) to inspect what git is tracking. Preferences → "Show .git in folder listings" puts it back in the list for users who want to drill into git's internals.
 - Submodule indicator — directories declared in `.gitmodules` show **submodule** in the Status column; ancestor wrapper folders (e.g. `vendor/`) show **contains submodule** so they read distinctly from unrelated plain directories. Clicking a submodule descends into it as its own repo and adds the path to your recent folders.
 - Repo header shows current path, branch name, clean / dirty+untracked file counts when inside a repo, a remote-sync indicator (`in sync with origin/<branch> ✓` / `↑N ↓M vs origin/<branch>` / `no upstream` / `(no remotes)` / `… — remote unreachable` after a probe fails), plus the last commit's subject, author, and relative time (italicised) — "(no commits)" for a freshly-init'd repo.
+- **"What's new since I last looked" banner** — a one-row strip just above the filter bar appears when you open a repo whose HEAD has advanced since your last visit: `7 new commits since you last opened this repo (since abc1234).  [Compare] [Dismiss]`. **Compare** opens Repo History with the stored marker pre-set as the compare base — one click to see file-by-file what changed between last visit and now. **Dismiss** hides the banner and advances the marker. Per-repo marker persisted in Fyne preferences (~50 bytes per repo); first visit silently captures the marker so you don't see a banner on a repo's debut. The marker also advances on cross-repo navigation, window close, and Quit, so closing the explorer counts as implicit acknowledgement. Force-push / pruned / behind-marker edge cases re-anchor silently to current HEAD.
 
 ### Filter bar
 
@@ -97,6 +112,17 @@ View → Repo History… (or the **History** toolbar button) opens a secondary w
 - **Compare any two commits** — click a commit, then the **Pick as compare base** button in the detail-pane header (checkmark icon). A banner appears at the top of the commit list (`Compare base: <SHA> — <subject>` + Cancel compare). Click any other commit → right pane switches to `Compare: <baseSHA> → <selectedSHA>` mode, showing files changed between the two commits. Click a file → opens a Historical Diff between the two arbitrary commits. While in compare mode the diff window auto-follows your selection — scrub through commits and the diff updates for the same file (driven by the existing "Keep only one diff window" preference; closed diffs stay closed).
 - Pane titles in the diff include short SHA + ISO date and the commit subject, so parallel comparison windows stay self-identifying.
 - Binary blobs (NUL byte in the first 8 KB) get a friendly dialog instead of garbage output.
+- **Signed-commit badges** — each commit row carries a small left-gutter glyph for its signature status: **✓** valid · **✗** bad / expired / revoked · **?** signed but unverifiable on this machine (signer's public key isn't in your local keyring) · blank for unsigned. The detail pane mirrors with an italic `Signature: …` line. Built on `git log --format=%G?` so it uses your local GPG/SSH configuration; loaded asynchronously so the window opens immediately and badges populate when the log walk finishes. Graceful degrade if `git` isn't on PATH — the rest of the history view still works without badges.
+
+### Reflog viewer
+
+View → Reflog… (also in the View ▾ toolbar dropdown and the tray's data-views section) — a read-only "here's where HEAD has been" panel for the current repo:
+
+- **Left pane** — list of reflog entries: `HEAD@{N}` · date · action (commit / checkout / reset / rebase / pull / ...) · message. Columns are fixed-width with the message flexing to the remaining space.
+- **Right pane** — when an entry is selected, shows the entry's commit detail: short SHA, author, ISO timestamp, the reflog action line, the commit's message, and the list of files changed vs the commit's parent.
+- Click a file in the right pane → opens a Historical Diff for that file at the entry's commit vs its parent, both sides read-only. Same flow as Repo History's detail pane.
+- **Unreachable commits** still resolve — entries pointing at commits that fell out of the regular log (after a hard reset or rebase) are still in the object DB because the reflog itself keeps them alive. Useful for "I rebased and lost something" recovery scenarios. If the commit truly isn't there (pruned), the detail pane shows a graceful fallback message instead of erroring.
+- Shells out to `git -C <repo> reflog --date=iso --format=…` with NULL-byte field separators so subject text containing `:` or `|` doesn't trip the parser.
 
 ### Repo Health
 
@@ -112,7 +138,7 @@ Pure read-only: never invokes `git gc`, `prune`, or any other write operation; t
 
 ### Repo views: Branches / Tags / Remotes / Contributors / Stashes
 
-Five small read-only listings under the View menu, the system tray, and the new **View ▾** toolbar dropdown (a one-click curated menu of all the data views: Blame…, Branches…, Contributors…, Git Status Legend…, Remotes…, Repo Health…, Repo History…, Stashes…, Tags…, alphabetised; disabled when no repo is loaded). Pure display; no checkout / create / delete buttons — that line stays with the git CLI.
+Five small read-only listings under the View menu, the system tray, and the **View ▾** toolbar dropdown (a one-click curated menu of all the data views: Blame…, Branches…, Contributors…, Git Status Legend…, Reflog…, Remotes…, Repo Health…, Repo History…, Stashes…, Tags…, alphabetised; disabled when no repo is loaded). Pure display; no checkout / create / delete buttons — that line stays with the git CLI.
 
 - **Branches…** / **Tags…** — name · short SHA · commit date · subject, sorted newest-first. Annotated tags resolved through their tag object to the underlying commit.
 - **Remotes…** — name · URL. A remote with separate fetch and push URLs gets one row per URL.
@@ -172,9 +198,9 @@ Tracked as repo-bound: **Repo History**, **Diff vs HEAD**, **Historical Diff**. 
 
 ## Status
 
-This is an active rebuild on top of [KrankyBearDiff](https://github.com/amarillier/KrankyBearDiff). The diff engine is intact and reachable from the File menu, the new **Diff** toolbar button, the "Diff against HEAD" action, the Blame viewer click-through, and the Repo History view. Current release: **v0.6.0** — see [ReleaseNotes.txt](ReleaseNotes.txt) for what landed.
+This is an active rebuild on top of [KrankyBearDiff](https://github.com/amarillier/KrankyBearDiff). The diff engine is intact and reachable from the File menu, the **Diff** toolbar button, the "Diff against HEAD" action, the Blame viewer click-through, the Repo History view, and the Reflog viewer. Current release: **v0.7.0** — see [ReleaseNotes.txt](ReleaseNotes.txt) for what landed.
 
-### Known gaps as of v0.6.0
+### Known gaps as of v0.7.0
 
 - The remote-sync indicator's ahead/behind counts come from cached refs — they only refresh when *you* fetch (CLI or git client). The async live probe checks reachability but doesn't actually fetch. Run `git fetch` from your terminal to update the cached counts.
 - Directory rollup excludes ignored files — go-git's `Status()` doesn't enumerate them and walking the gitignore matcher recursively for every directory listing would slow down large repos. Use the file-level **Only ignored** filter for `.gitignore` auditing.

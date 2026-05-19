@@ -88,6 +88,16 @@ type historyView struct {
 	// stays in sync with the history view — clicking through commits
 	// becomes a "scrub" of the same file across time.
 	lastDiffFile string
+
+	// sigStatus maps commit SHA → `git log --format=%G?` status byte
+	// (G/B/U/X/Y/R/E/N — see commit_signatures.go). Populated once,
+	// asynchronously, after the window opens so the user isn't blocked
+	// while git walks the log. Reads from this map happen on the UI
+	// thread (row template, selectCommit) — protected by sigMu since
+	// the writer goroutine and the UI thread don't otherwise sync.
+	sigStatus map[plumbing.Hash]byte
+	sigMu     sync.RWMutex
+	sigLabel  *widget.Label // detail-pane "Signature: ..." line
 }
 
 func openHistoryWindow(a fyne.App, repo *git.Repository, repoRoot string, parent fyne.Window, pathFilter string) *historyView {
@@ -131,7 +141,50 @@ func openHistoryWindow(a fyne.App, repo *git.Repository, repoRoot string, parent
 	registerRepoChildWindow(w)
 	windowShow(w)
 	v.refreshHeader()
+	go v.loadSignaturesAsync()
 	return v
+}
+
+// loadSignaturesAsync runs `git log --format=%H %G?` in the background
+// and refreshes the commit list + currently-selected detail pane when
+// the result lands. Falls back to "no badges" silently when git isn't
+// on PATH — the history window remains fully functional, just without
+// signature decoration.
+func (v *historyView) loadSignaturesAsync() {
+	m := gatherCommitSignatures(v.repoRoot)
+	fyne.Do(func() {
+		v.sigMu.Lock()
+		v.sigStatus = m
+		v.sigMu.Unlock()
+		if v.commitList != nil {
+			v.commitList.Refresh()
+		}
+		// Re-render the detail pane so its Signature line picks up the
+		// status for the currently-selected commit.
+		if v.selectedCommit != nil {
+			v.refreshSignatureLabel(v.selectedCommit)
+		}
+	})
+}
+
+// signatureFor returns the status byte for sha (0 if not yet loaded or
+// not in the map). Locked read so it's safe to call from the UI thread
+// while loadSignaturesAsync is still running.
+func (v *historyView) signatureFor(sha plumbing.Hash) byte {
+	v.sigMu.RLock()
+	defer v.sigMu.RUnlock()
+	return v.sigStatus[sha]
+}
+
+// refreshSignatureLabel updates the detail-pane's signature line based
+// on the given commit. Hides the label (empty text) for unsigned
+// commits so a repo with no signed history doesn't show a perpetual
+// "Signature: unsigned" line.
+func (v *historyView) refreshSignatureLabel(c *object.Commit) {
+	if v.sigLabel == nil || c == nil {
+		return
+	}
+	v.sigLabel.SetText(signatureHumanLabel(v.signatureFor(c.Hash)))
 }
 
 // openHistoryIter builds the commit iterator for the history window. When
@@ -338,14 +391,23 @@ func (v *historyView) buildUI() fyne.CanvasObject {
 			subject.Truncation = fyne.TextTruncateEllipsis
 			meta := widget.NewLabel("")
 			meta.Truncation = fyne.TextTruncateEllipsis
-			return container.NewVBox(subject, meta)
+			// Signature badge sits in a left-side gutter so the SHA
+			// stays unencumbered; widget.Label is fine for unicode
+			// glyphs and inherits theme colours so dark/light mode
+			// stays consistent. Monospaced label keeps the gutter
+			// width stable when signed and unsigned rows mix.
+			badge := widget.NewLabel(" ")
+			badge.TextStyle = fyne.TextStyle{Monospace: true, Bold: true}
+			return container.NewBorder(nil, nil, badge, nil, container.NewVBox(subject, meta))
 		},
 		func(id widget.ListItemID, o fyne.CanvasObject) {
 			if id < 0 || id >= len(v.commits) {
 				return
 			}
 			c := v.commits[id]
-			box := o.(*fyne.Container)
+			border := o.(*fyne.Container)
+			badge := border.Objects[1].(*widget.Label)
+			box := border.Objects[0].(*fyne.Container)
 			subject := box.Objects[0].(*widget.Label)
 			meta := box.Objects[1].(*widget.Label)
 			subject.SetText(firstLine(c.Message))
@@ -354,6 +416,7 @@ func (v *historyView) buildUI() fyne.CanvasObject {
 				short = short[:7]
 			}
 			meta.SetText(fmt.Sprintf("%s  •  %s  •  %s", short, c.Author.Name, humanRelativeTime(c.Author.When)))
+			badge.SetText(signatureBadge(v.signatureFor(c.Hash)))
 		},
 	)
 	v.commitList.OnSelected = func(id widget.ListItemID) {
@@ -422,6 +485,10 @@ func (v *historyView) buildUI() fyne.CanvasObject {
 	v.hintLabel = widget.NewLabel("")
 	v.hintLabel.TextStyle = fyne.TextStyle{Italic: true}
 
+	v.sigLabel = widget.NewLabel("")
+	v.sigLabel.TextStyle = fyne.TextStyle{Italic: true}
+	v.sigLabel.Truncation = fyne.TextTruncateEllipsis
+
 	v.fileList = widget.NewList(
 		func() int { return len(v.changes) },
 		func() fyne.CanvasObject {
@@ -461,6 +528,7 @@ func (v *historyView) buildUI() fyne.CanvasObject {
 
 	detailHeader := container.NewVBox(
 		v.headerLabel,
+		v.sigLabel,
 		v.messageLabel,
 		v.hintLabel,
 		container.NewHBox(v.pickCompareBtn),
@@ -500,6 +568,7 @@ func (v *historyView) refreshHeader() {
 func (v *historyView) selectCommit(c *object.Commit) {
 	v.selectedCommit = c
 	v.refreshPickCompareBtn()
+	v.refreshSignatureLabel(c)
 
 	short := shortSHA(c.Hash.String())
 

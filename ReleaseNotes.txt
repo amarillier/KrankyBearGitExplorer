@@ -2,10 +2,88 @@
 KrankyBear GitExplorer - RELEASE NOTES
 ═══════════════════════════════════════════════════════════════════════════════
 Future ideas:
-- Reflog viewer — read-only "here's where HEAD has been" panel; pure inspection, very on-brand for an explorer.
-- "What's new since I last looked" — persist HEAD SHA per recent-repo on close; on reopen show a banner "N new commits since you last opened this repo" with one-click compare against last-seen HEAD.
-- Signed-commit badges in Repo History — small ✓ / ? / ✗ glyph using go-git's commit.Verify(), plus a "Signature: valid / unsigned / unverifiable" line in the detail pane.
 -
+
+Version 0.7.0 - May 19, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Signed-commit badges in Repo History — each commit row in the
+  Repo History window now shows a small left-gutter glyph for the
+  commit's signature status:
+    • ✓ valid signature
+    • ✗ bad / expired / revoked
+    • ? signed-but-unverifiable-on-this-machine (signer's public
+      key isn't in your local keyring)
+    • blank for unsigned
+  The detail pane gets a matching italic "Signature: …" line
+  between the header and the commit message.
+    • Built on `git log --format=%G?` so it uses your local
+      GPG/SSH configuration. To turn a ? into a ✓ for a commit
+      you trust, import the signer's public key — e.g.
+      `gpg --recv-keys <keyid>` or via your existing keyserver
+      workflow.
+    • Loaded asynchronously in the background — the window
+      opens immediately; badges populate when the git log walk
+      completes (typically <1s, a few seconds on huge repos).
+    • Graceful degrade — if `git` isn't on PATH the history
+      window still works, just without badges. Scoped to Repo
+      History; Blame's gutter stays uncluttered.
+
+- Reflog viewer — new View ▾ → Reflog… (also on the menu bar
+  View menu and the tray's data-views section). Opens a
+  master/detail window showing "here's where HEAD has been":
+  HEAD@{N} · date · action (commit / checkout / reset / rebase
+  / ...) · message in the left pane, the selected entry's commit
+  detail + file list in the right pane.
+    • Click any file in the right pane → opens a Historical
+      Diff (file at that commit vs its parent, both sides
+      read-only). Same flow as Repo History's detail pane.
+    • Works for unreachable commits — reflog entries that
+      point at commits no longer in the regular log (after a
+      hard reset or rebase) still resolve, because the reflog
+      itself keeps the commit objects alive. Useful for
+      "I rebased and lost something" recovery scenarios.
+    • Shells out to `git -C <repo> reflog --date=iso
+      --format=…` and parses with NULL-byte field separators so
+      subject text with `:` or `|` doesn't trip the parser.
+
+- "What's new since I last looked" — a small banner above the
+  filter bar surfaces what changed in a repo since your last
+  visit. When you open a repo whose HEAD has advanced since you
+  last had it open, the banner reads:
+      "7 new commits since you last opened this repo (since
+       abc1234)."   [Compare] [Dismiss]
+    • Compare opens Repo History with the stored marker
+      pre-set as the compare base — one click to see the diff
+      between last visit and now, file-by-file.
+    • Dismiss hides the banner and advances the marker so it
+      doesn't re-appear unless real new commits land.
+    • Per-repo marker, persisted via Fyne preferences (key
+      "lastSeenHead:<repoRoot>" → SHA, ~50 bytes per repo).
+      First visit to a repo silently captures the marker — no
+      banner the very first time, only when something has
+      changed between visits.
+    • Marker advances on: Dismiss, Compare, cross-repo
+      navigation, window close, Quit. Closing the explorer
+      counts as implicit acknowledgement of whatever state was
+      on screen.
+    • Force-push / pruned / behind-marker edge cases: silently
+      re-anchor to current HEAD and skip the banner — the
+      chain broke, so the explorer just moves on.
+
+🔧 CHANGED
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Documented `git` CLI prerequisite — README and the in-app
+  Help window now carry a dedicated Requirements section
+  calling out that several operations shell out to the system
+  `git` binary: stash listing, reflog, signed-commit badges,
+  "What's new" commit count, Repo Health's `fsck` +
+  count-objects, remote sync (`ls-remote`), and `git rm
+  --cached`. The dependency has been there since v0.2.0; this
+  just makes it explicit so users installing v0.7.0 binaries
+  know what they need on PATH.
+
 
 Version 0.6.0 - May 17, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
