@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -86,6 +87,89 @@ func showRemotesDialog(repo *git.Repository, parent fyne.Window, repoRoot string
 	})
 	title := "Remotes — " + filepath.Base(repoRoot)
 	showRefDialog(title, []string{"Name", "URL"}, rows, parent)
+}
+
+// showRepoConfigDialog renders the repo's local git config (the contents
+// of .git/config plus anything git resolves via include / includeIf
+// directives) as a read-only key/value list. Shells to `git config
+// --local --list` so the output matches the CLI verbatim. Pure read-only
+// — no edit/unset affordance, same line in the sand as Branches/Tags/
+// Remotes.
+func showRepoConfigDialog(repo *git.Repository, parent fyne.Window, repoRoot string) {
+	if repo == nil {
+		return
+	}
+	rows, err := gatherRepoConfig(repoRoot)
+	if err != nil {
+		dialog.ShowError(err, parent)
+		return
+	}
+
+	title := "Repo Config — " + filepath.Base(repoRoot)
+	headers := []string{"Key", "Value"}
+	header := refHeaderRow(headers)
+
+	list := widget.NewList(
+		func() int { return len(rows) },
+		func() fyne.CanvasObject { return newRefRowWidget(2) },
+		func(id widget.ListItemID, o fyne.CanvasObject) {
+			if id < 0 || id >= len(rows) {
+				return
+			}
+			row := o.(*refRowWidget)
+			row.name.SetText(rows[id].name)
+			row.wide.SetText(rows[id].subject)
+		},
+	)
+
+	// Intro heads off the "where's my user.name?" question when it's set
+	// only in ~/.gitconfig rather than the repo's own config.
+	intro := widget.NewLabel("Local repo config from .git/config. Global (~/.gitconfig) and system configs aren't shown.")
+	intro.Wrapping = fyne.TextWrapWord
+	intro.TextStyle = fyne.TextStyle{Italic: true}
+
+	footer := widget.NewLabel(fmt.Sprintf("%d item(s)", len(rows)))
+	body := container.NewBorder(
+		container.NewVBox(intro, header, widget.NewSeparator()),
+		footer,
+		nil, nil,
+		list,
+	)
+	body.Resize(fyne.NewSize(680, 480))
+
+	d := dialog.NewCustom(title, "Close", body, parent)
+	d.Resize(fyne.NewSize(820, 540))
+	d.Show()
+}
+
+// gatherRepoConfig shells to `git -C <repo> config --local --list` and
+// parses the `key=value` lines. Values may legitimately contain `=`
+// (URLs with credentials, includeIf conditions) so we split on the
+// first `=` only. Sorted alphabetically by key.
+func gatherRepoConfig(repoRoot string) ([]refRow, error) {
+	cmd := exec.Command("git", "-C", repoRoot, "config", "--local", "--list")
+	out, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("git config --local --list: %w\n%s", err, strings.TrimSpace(string(ee.Stderr)))
+		}
+		return nil, fmt.Errorf("git config --local --list: %w", err)
+	}
+	var rows []refRow
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		if eq := strings.IndexByte(line, '='); eq >= 0 {
+			rows = append(rows, refRow{name: line[:eq], subject: line[eq+1:]})
+		} else {
+			rows = append(rows, refRow{name: line})
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		return strings.ToLower(rows[i].name) < strings.ToLower(rows[j].name)
+	})
+	return rows, nil
 }
 
 type refSourceKind int

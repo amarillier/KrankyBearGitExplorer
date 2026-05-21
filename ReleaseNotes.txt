@@ -2,7 +2,31 @@
 KrankyBear GitExplorer - RELEASE NOTES
 ═══════════════════════════════════════════════════════════════════════════════
 Future ideas:
--
+- Maybe some basic git management even though focus was originally intended as explorer only?
+  - init, config --local : user.name, user.email, remote URL (repo specific vs global git identity), commit, pull, push
+  - maybe some day, maybe never: clone, branch, merge - this is much more in depth
+
+
+Version 0.7.1 - May 20, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Repo Config view — new View ▾ → Repo Config… (also on the menu
+  bar View menu and the tray) opens a read-only listing of the
+  current repo's local git config: every key/value pair from
+  .git/config (and any files git resolves via include /
+  includeIf directives), sorted alphabetically by key. Two
+  columns: Key | Value.
+    • Shells out to `git -C <repo> config --local --list` so the
+      output matches exactly what you'd see on the CLI.
+    • Local-only by design: ~/.gitconfig (global) and system
+      config are deliberately excluded. A small italic note above
+      the list spells this out so a missing user.name doesn't
+      read as a bug when it's set only globally.
+    • Pure read-only — no edit / unset affordance, same line in
+      the sand as the existing Branches / Tags / Remotes
+      listings.
+
 
 Version 0.7.0 - May 19, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
