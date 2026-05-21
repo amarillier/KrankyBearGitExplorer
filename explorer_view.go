@@ -1232,6 +1232,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	branches := fyne.NewMenuItem("Branches…", func() { v.showBranches() })
 	tags := fyne.NewMenuItem("Tags…", func() { v.showTags() })
 	remotes := fyne.NewMenuItem("Remotes…", func() { v.showRemotes() })
+	repoConfig := fyne.NewMenuItem("Repo Config…", func() { v.showRepoConfig() })
 	reflog := fyne.NewMenuItem("Reflog…", func() { v.openReflog() })
 	contributors := fyne.NewMenuItem("Contributors…", func() { v.showContributors() })
 	stashes := fyne.NewMenuItem("Stashes…", func() { v.showStashes() })
@@ -1245,6 +1246,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		legend,
 		reflog,
 		remotes,
+		repoConfig,
 		health,
 		history,
 		stashes,
@@ -1378,6 +1380,7 @@ func (v *explorerView) buildViewDropdownMenu() *fyne.Menu {
 		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
 		fyne.NewMenuItem("Reflog…", func() { v.openReflog() }),
 		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
+		fyne.NewMenuItem("Repo Config…", func() { v.showRepoConfig() }),
 		fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() }),
 		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
 		fyne.NewMenuItem("Stashes…", func() { v.showStashes() }),
@@ -1417,6 +1420,12 @@ func (v *explorerView) showRemotes() {
 		return
 	}
 	showRemotesDialog(v.repo, v.win, v.repoRoot)
+}
+func (v *explorerView) showRepoConfig() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showRepoConfigDialog(v.repo, v.win, v.repoRoot)
 }
 func (v *explorerView) showContributors() {
 	if !v.guardRepoLoaded() {
@@ -1519,6 +1528,7 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
 		fyne.NewMenuItem("Reflog…", func() { v.openReflog() }),
 		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
+		fyne.NewMenuItem("Repo Config…", func() { v.showRepoConfig() }),
 		fyne.NewMenuItem("Repo Health…", func() { v.openRepoHealth() }),
 		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
 		fyne.NewMenuItem("Stashes…", func() { v.showStashes() }),
