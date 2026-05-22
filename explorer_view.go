@@ -1241,6 +1241,8 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	pull.Disabled = v.repo == nil
 	push := fyne.NewMenuItem("Push…", func() { v.pushChanges() })
 	push.Disabled = v.repo == nil
+	release := fyne.NewMenuItem("Release…", func() { v.publishRelease() })
+	release.Disabled = v.repo == nil
 
 	file := fyne.NewMenu("File",
 		openFolder,
@@ -1253,6 +1255,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		manageRemotes,
 		pull,
 		push,
+		release,
 		fyne.NewMenuItemSeparator(),
 		compare,
 		scanDeps,
@@ -1449,8 +1452,11 @@ func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
 	push := fyne.NewMenuItem("Push…", func() { v.pushChanges() })
 	push.Disabled = v.repo == nil
 
-	// Alphabetised: Commit, Initialize, Local Repo Identity, Manage Remotes, Pull, Push.
-	return fyne.NewMenu("", commit, init, identity, manageRemotes, pull, push)
+	release := fyne.NewMenuItem("Release…", func() { v.publishRelease() })
+	release.Disabled = v.repo == nil
+
+	// Alphabetised: Commit, Initialize, Local Repo Identity, Manage Remotes, Pull, Push, Release.
+	return fyne.NewMenu("", commit, init, identity, manageRemotes, pull, push, release)
 }
 
 // initRepoHere is the menu entry point for creating a new repository at
@@ -1547,6 +1553,17 @@ func (v *explorerView) pullChanges() {
 	showPullDialog(v.win, v.repo, v.repoRoot, func() {
 		v.refresh()
 	})
+}
+
+// publishRelease opens the Release publishing dialog (v0.9.0). The
+// dialog handles its own gh-CLI / github-remote pre-flight checks and
+// runs the publish asynchronously so the explorer UI stays responsive
+// during the upload.
+func (v *explorerView) publishRelease() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showReleaseDialog(v.win, v.repo, v.repoRoot)
 }
 
 // openRepoHealth pops the read-only Repo Health dialog (object-database

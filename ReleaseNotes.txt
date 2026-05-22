@@ -2,11 +2,71 @@
 KrankyBear GitExplorer - RELEASE NOTES
 ═══════════════════════════════════════════════════════════════════════════════
 Future ideas:
-- Release publishing — replace the manual "go to github.com, draft a
-  release, drag binaries from bin/ and installers/, click Release"
-  flow with an in-app action that parses the matching ReleaseNotes
-  section and uploads the bundled assets via the gh CLI.
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
+
+
+Version 0.9.0 - May 22, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Release publishing arrives — the last piece of the
+edit→commit→push→release loop. Compiling stays where it is (your
+existing scripts produce bin/* and installers/*); the new dialog
+takes those artifacts, the matching section from ReleaseNotes.txt,
+and the current appVersion, and turns them into a published GitHub
+release via the gh CLI. No more dragging files into github.com's
+release composer.
+
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Release… — new Repo ▾ → Release… (also on the File menu).
+  Composes and publishes a GitHub release for the current
+  appVersion in one dialog:
+    • Tag, Title, and Target prefilled — tag is v<appVersion>,
+      title is "v<version> - <today's date>", target shows the
+      short HEAD SHA + commit subject so you can confirm you're
+      tagging the right commit. Tag and title are editable.
+    • Release notes auto-extracted from ReleaseNotes.txt — the
+      dialog scans for the section matching the current
+      appVersion, drops the version-header line and the
+      decorative ━━━ rule (those go in the tag/title), and
+      prefills the multi-line notes editor. Hint label below the
+      editor names the source file and version it found —
+      handles missing-file and unmatched-version cases by
+      opening with an empty notes field and a helpful note.
+    • Assets auto-discovered — every file in bin/ and
+      installers/ (hidden files like .DS_Store skipped) becomes
+      a checkbox row showing the path, size, and a filename-
+      version-mismatch warning when the file's embedded version
+      doesn't match appVersion. All assets default checked;
+      uncheck any you want to leave off this release.
+    • Pre-release / Draft checkboxes — both default off.
+      Pre-release marks the release as non-production on
+      GitHub; Draft publishes but holds back from public view so
+      you can review on the web before announcing.
+    • Tag-already-exists pre-flight — before publishing, the
+      dialog runs `gh release view` against the chosen tag. If
+      a release already exists, an overwrite-confirm dialog
+      explains the cost (download counts and external links to
+      the old release will be lost) and offers Cancel or
+      Overwrite. Overwrite deletes the old release + tag via
+      `gh release delete --cleanup-tag` then re-creates fresh.
+    • Publishes via `gh release create <tag> <files…>
+      --title --notes-file --prerelease? --draft?` with an
+      explicit `--repo` flag derived from the first github.com
+      remote configured for the repo (so multi-remote repos pick
+      the right one without relying on gh's auto-detection).
+    • Notes go through a tempfile (`--notes-file`) not a shell
+      argument, so multi-line content with quotes / backticks /
+      box-drawing characters survives intact.
+    • Success path surfaces a [Open release on GitHub] button
+      that takes you to the new release page. Failure path
+      surfaces gh's verbatim output for diagnosis.
+
+- gh CLI is now used by two distinct features — Dependabot alert
+  auto-fetch (v0.8.0) and Release publishing (v0.9.0). Both
+  surface the same friendly hints when gh is missing
+  (install from https://cli.github.com/) or not authenticated
+  (run `gh auth login`).
+
 
 Version 0.8.0 - May 22, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
