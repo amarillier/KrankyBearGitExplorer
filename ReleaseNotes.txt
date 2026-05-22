@@ -2,9 +2,76 @@
 KrankyBear GitExplorer - RELEASE NOTES
 ═══════════════════════════════════════════════════════════════════════════════
 Future ideas:
-- Maybe some basic git management even though focus was originally intended as explorer only?
-  - init, config --local : user.name, user.email, remote URL (repo specific vs global git identity), commit, pull, push
-  - maybe some day, maybe never: clone, branch, merge - this is much more in depth
+- Remaining basic git management (Phase 7 follow-up):
+  - commit with message, pull, push
+  - remote add / edit URL / remove (single-remote is the common case)
+- maybe some day, maybe never: clone, branch, merge — these are much more in depth
+
+Version 0.8.0 - May 21, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+First write-ops surface — the explorer was emphatically pure-read-only
+through v0.5/0.6/0.7 (Branches / Tags / Remotes / Reflog / Stashes /
+Contributors / Repo Health / Repo Config all display-only). v0.8.0
+crosses that line with a small targeted subset: initialise a repo,
+and set the local user.name / user.email identity. Subsequent v0.8.x
+releases will add commit / pull / push and remote management; heavier
+operations (clone, branch, merge) remain deferred since VS Code +
+the CLI already cover them well.
+
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Repo ▾ toolbar dropdown — new button next to View ▾ holding the
+  repo-management actions: Initialize Repository Here…, Local Repo
+  Identity…. Stays enabled regardless of repo state; individual
+  items enable/disable themselves so the right action is reachable
+  whether the current folder is/isn't already a git repo. Future
+  v0.8.x slices (commit, pull, push, remote add/edit/remove) will
+  join this menu.
+
+- Initialize Repository Here… — Repo ▾ → Initialize… (also on the
+  File menu in its own section between Refresh and Compare Two
+  Files). Confirms before creating .git, with one configurable
+  field: "Initial branch" pre-seeded from your global
+  init.defaultBranch (falling back to `master` if it's unset).
+    • Per-project branch names from the dialog land instantly —
+      no need for the manual `git branch -M <name>` step after
+      init. Useful if you prefer a project-specific branch name
+      (matching a chosen remote shorthand, say) instead of
+      always `main` / `master`.
+    • Uses go-git's PlainInitWithOptions (DefaultBranch) so HEAD
+      is born already pointing at refs/heads/<chosen>. The branch
+      ref itself materialises on the first commit — until then,
+      HEAD is unborn (this is normal `git init` behaviour and
+      already handled by the explorer's "(no commits)" header
+      label from v0.3.0).
+    • Existing files in the folder are not touched — only a .git
+      directory is created alongside them. After success, the
+      explorer auto-rebinds to the new repo (rerun of
+      DetectDotGit via loadFolder); the header repaints with the
+      branch + clean/dirty counts immediately.
+    • Minimal branch-name validation up front (no whitespace, no
+      ~^:?*[\, no leading `-`, no trailing `.` or `.lock`, no
+      `..`). Anything subtler that git itself refuses surfaces in
+      a follow-up error dialog with git's own message.
+
+- Local Repo Identity… — Repo ▾ → Local Repo Identity… (also on the
+  File menu). Edits the repo's own user.name / user.email, saved
+  to .git/config so they override your ~/.gitconfig identity for
+  this repo only. Two fields, seeded from the current --local
+  values; blank fields are treated as "no change" so you can't
+  accidentally clear an identity by emptying a field. Shells out
+  to `git config --local` for writes (same surface as the v0.7.1
+  Repo Config view's reads) — avoids any risk of go-git's config
+  marshaller reordering keys or losing comments on a round-trip.
+
+🔧 CHANGED
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- File menu reshuffle — new separator-bounded section between
+  Refresh and Compare Two Files… holds the repo-management
+  actions (Initialize Repository Here…, Local Repo Identity…),
+  alphabetised within. Surfaces the same actions as Repo ▾ via
+  the menu bar for users who prefer the menu route, with
+  disable-state that follows the current folder's repo status.
 
 
 Version 0.7.1 - May 20, 2026

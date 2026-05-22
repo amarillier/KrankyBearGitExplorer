@@ -58,6 +58,7 @@ type explorerView struct {
 	healthBtn   *ttwidget.Button
 	depScanBtn  *ttwidget.Button
 	viewBtn     *ttwidget.Button
+	repoBtn     *ttwidget.Button
 	diffBtn     *ttwidget.Button
 
 	// selectedFileRel / selectedFileAbs hold the repo-relative and on-disk
@@ -267,11 +268,23 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 		pos.Y += v.viewBtn.Size().Height
 		widget.ShowPopUpMenuAtPosition(menu, v.win.Canvas(), pos)
 	})
-	v.viewBtn.SetToolTip("Open a repo data view (Blame, Branches, Contributors, Git Status Legend, Reflog, Remotes, Repo Health, Repo History, Stashes, Tags)")
+	v.viewBtn.SetToolTip("Open a repo data view (Blame, Branches, Contributors, Git Status Legend, Reflog, Remotes, Repo Config, Repo Health, Repo History, Stashes, Tags)")
 	v.viewBtn.Importance = widget.LowImportance
 	v.viewBtn.Disable()
 
-	toolRow := container.NewHBox(browseBtn, recentBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn, v.viewBtn, v.historyBtn, v.healthBtn, v.depScanBtn, v.diffBtn)
+	// Repo ▾ is the write-ops sibling to View ▾. Stays enabled regardless of
+	// repo state — the menu items inside enable/disable themselves based on
+	// whether a repo is currently loaded.
+	v.repoBtn = ttwidget.NewButtonWithIcon("Repo ▾", theme.FolderIcon(), func() {
+		menu := v.buildRepoDropdownMenu()
+		pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(v.repoBtn)
+		pos.Y += v.repoBtn.Size().Height
+		widget.ShowPopUpMenuAtPosition(menu, v.win.Canvas(), pos)
+	})
+	v.repoBtn.SetToolTip("Repository management actions (Initialize Repository Here, Local Repo Identity)")
+	v.repoBtn.Importance = widget.LowImportance
+
+	toolRow := container.NewHBox(browseBtn, recentBtn, v.upBtn, v.reloadBtn, widget.NewSeparator(), v.modeBtn, v.repoBtn, v.viewBtn, v.historyBtn, v.healthBtn, v.depScanBtn, v.diffBtn)
 
 	v.filterEntry = widget.NewEntry()
 	v.filterEntry.SetPlaceHolder("Filter by name…")
@@ -1212,10 +1225,31 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 
 	scanDeps := fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() })
 
+	// Git management entries — disabled state depends on whether the current
+	// folder is inside a repo. buildMainMenu is re-run via refreshMenu on
+	// folder changes (see loadFolder), so these flags stay accurate as the
+	// user navigates.
+	commit := fyne.NewMenuItem("Commit…", func() { v.commitChanges() })
+	commit.Disabled = v.repo == nil
+	initRepo := fyne.NewMenuItem("Initialize Repository Here…", func() { v.initRepoHere() })
+	initRepo.Disabled = v.repo != nil || v.currentPath == ""
+	repoIdentity := fyne.NewMenuItem("Local Repo Identity…", func() { v.editRepoIdentity() })
+	repoIdentity.Disabled = v.repo == nil
+	manageRemotes := fyne.NewMenuItem("Manage Remotes…", func() { v.manageRemotes() })
+	manageRemotes.Disabled = v.repo == nil
+	push := fyne.NewMenuItem("Push…", func() { v.pushChanges() })
+	push.Disabled = v.repo == nil
+
 	file := fyne.NewMenu("File",
 		openFolder,
 		openRecent,
 		refresh,
+		fyne.NewMenuItemSeparator(),
+		commit,
+		initRepo,
+		repoIdentity,
+		manageRemotes,
+		push,
 		fyne.NewMenuItemSeparator(),
 		compare,
 		scanDeps,
@@ -1385,6 +1419,111 @@ func (v *explorerView) buildViewDropdownMenu() *fyne.Menu {
 		fyne.NewMenuItem("Repo History…", func() { v.openHistory() }),
 		fyne.NewMenuItem("Stashes…", func() { v.showStashes() }),
 		fyne.NewMenuItem("Tags…", func() { v.showTags() }),
+	)
+}
+
+// buildRepoDropdownMenu builds the popup menu shown by the toolbar's
+// "Repo ▾" button. Holds the v0.8.0 write-ops surface — Initialize
+// Repository Here… (enabled when the current folder is NOT yet a repo)
+// and Local Repo Identity… (enabled when it IS a repo). Future v0.8.x
+// items (Commit, Pull, Push, Remotes management) will join this list.
+func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
+	init := fyne.NewMenuItem("Initialize Repository Here…", func() { v.initRepoHere() })
+	init.Disabled = v.repo != nil || v.currentPath == ""
+
+	commit := fyne.NewMenuItem("Commit…", func() { v.commitChanges() })
+	commit.Disabled = v.repo == nil
+
+	identity := fyne.NewMenuItem("Local Repo Identity…", func() { v.editRepoIdentity() })
+	identity.Disabled = v.repo == nil
+
+	manageRemotes := fyne.NewMenuItem("Manage Remotes…", func() { v.manageRemotes() })
+	manageRemotes.Disabled = v.repo == nil
+
+	push := fyne.NewMenuItem("Push…", func() { v.pushChanges() })
+	push.Disabled = v.repo == nil
+
+	// Alphabetised: Commit, Initialize, Local Repo Identity, Manage Remotes, Push.
+	return fyne.NewMenu("", commit, init, identity, manageRemotes, push)
+}
+
+// initRepoHere is the menu entry point for creating a new repository at
+// the explorer's current folder. The actual dialog + go-git PlainInit
+// call lives in git_management.go; this is just the contextual wrapper
+// that supplies the path and a post-success refresh.
+func (v *explorerView) initRepoHere() {
+	if v.currentPath == "" {
+		dialog.ShowInformation("No folder",
+			"Open a folder first — initialize creates a .git directory in the currently-open folder.",
+			v.win)
+		return
+	}
+	if v.repo != nil {
+		dialog.ShowInformation("Already a repository",
+			"This folder is already inside a git repository. Use the CLI for re-initialisation.",
+			v.win)
+		return
+	}
+	// loadFolder (not refresh) — refresh only re-uses an existing v.repoRoot,
+	// but init has just created a .git that wasn't there before. loadFolder
+	// re-runs DetectDotGit so the explorer rebinds to the new repo and the
+	// header repaints with branch info, commit counts, etc.
+	showInitRepoDialog(v.win, v.currentPath, func() {
+		v.loadFolder(v.currentPath)
+	})
+}
+
+// editRepoIdentity is the menu entry point for editing the current
+// repo's local user.name / user.email. Requires a loaded repo; the
+// underlying dialog (git_management.go) reads the seed values and
+// writes via `git config --local`.
+func (v *explorerView) editRepoIdentity() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showRepoIdentityDialog(v.win, v.repoRoot, nil)
+}
+
+// manageRemotes is the menu entry point for the Manage Remotes dialog
+// (add / edit URL / remove). After each successful mutation, the
+// remote-sync indicator in the header is refreshed so the new state
+// surfaces immediately.
+func (v *explorerView) manageRemotes() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showManageRemotesDialog(v.win, v.repo, v.repoRoot, func() {
+		v.refreshRemoteSync()
+	})
+}
+
+// commitChanges opens the commit composer. After a successful commit,
+// a full refresh repaints the header (last-commit subject, clean/dirty
+// counts, sync indicator) and the file list (whose status column
+// flips from "modified" back to clean for the just-committed paths).
+func (v *explorerView) commitChanges() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showCommitDialog(v.win, v.repoRoot, func() {
+		v.refresh()
+	})
+}
+
+// pushChanges opens the Push dialog for the current branch. The
+// dialog drives the operation internally and keeps itself open so the
+// user can read git's progress output. The onPushed callback refreshes
+// the header's remote-sync indicator on success; onLocalScan fires the
+// existing dep-scan when the inline GitHub-vuln alert's "Re-run local
+// dep-scan" button is clicked.
+func (v *explorerView) pushChanges() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showPushDialog(v.win, v.repo, v.repoRoot,
+		func() { v.refreshRemoteSync() },
+		func() { runDepScanForRepo(v.app, v.win, v.repoRoot) },
+		func() { v.commitChanges() },
 	)
 }
 
