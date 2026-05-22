@@ -1237,6 +1237,8 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	repoIdentity.Disabled = v.repo == nil
 	manageRemotes := fyne.NewMenuItem("Manage Remotes…", func() { v.manageRemotes() })
 	manageRemotes.Disabled = v.repo == nil
+	pull := fyne.NewMenuItem("Pull…", func() { v.pullChanges() })
+	pull.Disabled = v.repo == nil
 	push := fyne.NewMenuItem("Push…", func() { v.pushChanges() })
 	push.Disabled = v.repo == nil
 
@@ -1249,6 +1251,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		initRepo,
 		repoIdentity,
 		manageRemotes,
+		pull,
 		push,
 		fyne.NewMenuItemSeparator(),
 		compare,
@@ -1440,11 +1443,14 @@ func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
 	manageRemotes := fyne.NewMenuItem("Manage Remotes…", func() { v.manageRemotes() })
 	manageRemotes.Disabled = v.repo == nil
 
+	pull := fyne.NewMenuItem("Pull…", func() { v.pullChanges() })
+	pull.Disabled = v.repo == nil
+
 	push := fyne.NewMenuItem("Push…", func() { v.pushChanges() })
 	push.Disabled = v.repo == nil
 
-	// Alphabetised: Commit, Initialize, Local Repo Identity, Manage Remotes, Push.
-	return fyne.NewMenu("", commit, init, identity, manageRemotes, push)
+	// Alphabetised: Commit, Initialize, Local Repo Identity, Manage Remotes, Pull, Push.
+	return fyne.NewMenu("", commit, init, identity, manageRemotes, pull, push)
 }
 
 // initRepoHere is the menu entry point for creating a new repository at
@@ -1515,7 +1521,9 @@ func (v *explorerView) commitChanges() {
 // user can read git's progress output. The onPushed callback refreshes
 // the header's remote-sync indicator on success; onLocalScan fires the
 // existing dep-scan when the inline GitHub-vuln alert's "Re-run local
-// dep-scan" button is clicked.
+// dep-scan" button is clicked; onCommitNeeded handles the unborn-HEAD
+// recovery; onPullNeeded handles the non-fast-forward "pull first"
+// rescue.
 func (v *explorerView) pushChanges() {
 	if !v.guardRepoLoaded() {
 		return
@@ -1524,7 +1532,21 @@ func (v *explorerView) pushChanges() {
 		func() { v.refreshRemoteSync() },
 		func() { runDepScanForRepo(v.app, v.win, v.repoRoot) },
 		func() { v.commitChanges() },
+		func() { v.pullChanges() },
 	)
+}
+
+// pullChanges opens the Pull dialog. Requires an upstream — the dialog
+// refuses to open and points the user at Push if there isn't one. On
+// success the explorer refreshes so the file list, header counts, and
+// remote-sync indicator all reflect the new HEAD.
+func (v *explorerView) pullChanges() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showPullDialog(v.win, v.repo, v.repoRoot, func() {
+		v.refresh()
+	})
 }
 
 // openRepoHealth pops the read-only Repo Health dialog (object-database
