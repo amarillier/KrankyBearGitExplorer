@@ -1549,7 +1549,13 @@ func pushNeedsForce(output string) bool {
 // first" prompt that fires when HEAD is unborn — same one-click escape
 // hatch the Init success dialog could later use. Without it the user
 // has to dismiss and navigate to Repo ▾ → Commit… manually.
-func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, onPushed func(), onLocalScan func(), onCommitNeeded func()) {
+//
+// onPullNeeded, when non-nil, gets a "Pull first" button in the
+// rescue row that surfaces after a non-fast-forward push rejection.
+// Pull-first is the safer recovery when the rejection is caused by
+// someone else having pushed — vs. force-with-lease, which is the
+// right move for the amend-already-pushed case.
+func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, onPushed func(), onLocalScan func(), onCommitNeeded func(), onPullNeeded func()) {
 	if repo == nil || repoRoot == "" {
 		return
 	}
@@ -1655,9 +1661,20 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 	rescueHeadline := widget.NewLabel("")
 	rescueHeadline.Wrapping = fyne.TextWrapWord
 	rescueHeadline.TextStyle = fyne.TextStyle{Bold: true}
+	// Pull-first is the safer rescue (covers the someone-else-pushed
+	// case); it leads in the rescue row. Force-with-lease is the
+	// amend-already-pushed rescue and sits second with DangerImportance
+	// styling so it reads as the heavier action.
+	pullFirstBtn := widget.NewButtonWithIcon("Pull first", theme.DownloadIcon(), nil)
+	pullFirstBtn.Importance = widget.HighImportance
+	if onPullNeeded == nil {
+		pullFirstBtn.Disable()
+	} else {
+		pullFirstBtn.OnTapped = func() { onPullNeeded() }
+	}
 	forcePushBtn := widget.NewButtonWithIcon("Force push (--force-with-lease)", theme.WarningIcon(), nil)
 	forcePushBtn.Importance = widget.DangerImportance
-	rescueRow := container.NewVBox(rescueHeadline, container.NewHBox(forcePushBtn))
+	rescueRow := container.NewVBox(rescueHeadline, container.NewHBox(pullFirstBtn, forcePushBtn))
 	rescueRow.Hide()
 
 	pushBtn := widget.NewButtonWithIcon("Push", theme.UploadIcon(), nil)
@@ -1836,4 +1853,145 @@ func pluralY(n int) string {
 		return "y"
 	}
 	return "ies"
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pull (v0.8.0)
+//
+// Fetch + integrate from the branch's configured upstream. Strategy
+// (merge vs rebase) defaults to the user's `pull.rebase` config and is
+// overridable per-pull via a checkbox, matching the agreed scope. Merge
+// or rebase conflicts surface verbatim — there's no in-app resolver,
+// the user drops to their editor / CLI for that.
+// ─────────────────────────────────────────────────────────────────────────
+
+// pullRebaseDefault reads the user's `pull.rebase` config (local
+// winning over global). Empty / unset / explicit "false" → false
+// (git's historical default of merge); "true" → true. Used to seed the
+// Pull dialog's "Rebase instead of merge" checkbox so the dialog
+// honours the user's existing preference without overriding it.
+func pullRebaseDefault(repoRoot string) bool {
+	out, err := exec.Command("git", "-C", repoRoot, "config", "--get", "pull.rebase").Output()
+	if err != nil {
+		return false
+	}
+	v := strings.TrimSpace(strings.ToLower(string(out)))
+	return v == "true" || v == "yes" || v == "1"
+}
+
+// runPull invokes git pull with an explicit --rebase or --no-rebase
+// flag so the per-pull checkbox choice wins over the user's config
+// without permanently overriding it. CombinedOutput captures both
+// stdout and stderr so progress text and error messages both surface
+// in the status area.
+func runPull(repoRoot string, useRebase bool) (output string, err error) {
+	args := []string{"-C", repoRoot, "pull"}
+	if useRebase {
+		args = append(args, "--rebase")
+	} else {
+		args = append(args, "--no-rebase")
+	}
+	cmd := exec.Command("git", args...)
+	out, e := cmd.CombinedOutput()
+	if e != nil {
+		return strings.TrimSpace(string(out)), fmt.Errorf("%w\n%s", e, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// showPullDialog opens the Pull composer for the current branch.
+// Requires a configured upstream — without one, git pull has nothing
+// to pull from, so we refuse early with a friendly hint pointing at
+// Push (which auto-sets-upstream on first run). Dialog stays open
+// after the operation so the user can read the merge/rebase summary
+// verbatim, including any conflict messages.
+func showPullDialog(parent fyne.Window, repo *git.Repository, repoRoot string, onPulled func()) {
+	if repo == nil || repoRoot == "" {
+		return
+	}
+	branch := currentBranchName(repoRoot)
+	if branch == "" {
+		dialog.ShowError(fmt.Errorf("can't determine current branch — HEAD may be detached. Switch to a branch via the CLI first."), parent)
+		return
+	}
+	upstream := branchUpstream(repoRoot, branch)
+	if upstream == "" {
+		dialog.ShowInformation("No upstream",
+			fmt.Sprintf("Branch %q has no upstream configured — there's nothing to pull from.\n\nPush first via Repo ▾ → Push… (the first push will offer to set the upstream automatically).", branch),
+			parent)
+		return
+	}
+
+	// Split upstream "<remote>/<branch>" so we can show the resolved
+	// URL — same useful "what git is about to actually use" reveal
+	// that the Push dialog has, including any url.<base>.insteadof
+	// rewrites the user has configured globally.
+	remoteName := upstream
+	if i := strings.Index(upstream, "/"); i > 0 {
+		remoteName = upstream[:i]
+	}
+
+	branchLabel := widget.NewLabel(branch)
+	branchLabel.TextStyle = fyne.TextStyle{Monospace: true}
+
+	upstreamLabel := widget.NewLabel(upstream)
+	upstreamLabel.TextStyle = fyne.TextStyle{Italic: true}
+
+	resolvedLabel := widget.NewLabel(resolvedRemoteURL(repoRoot, remoteName))
+	resolvedLabel.TextStyle = fyne.TextStyle{Monospace: true}
+	resolvedLabel.Wrapping = fyne.TextWrapWord
+
+	rebaseCheck := widget.NewCheck("Rebase instead of merge (--rebase)", nil)
+	rebaseCheck.SetChecked(pullRebaseDefault(repoRoot))
+
+	statusLabel := widget.NewLabel("")
+	statusLabel.Wrapping = fyne.TextWrapWord
+
+	pullBtn := widget.NewButtonWithIcon("Pull", theme.DownloadIcon(), nil)
+	pullBtn.Importance = widget.HighImportance
+	pullBtn.OnTapped = func() {
+		useRebase := rebaseCheck.Checked
+		mode := "merge"
+		if useRebase {
+			mode = "rebase"
+		}
+		statusLabel.SetText(fmt.Sprintf("Pulling %s (%s) …", upstream, mode))
+		pullBtn.Disable()
+		rebaseCheck.Disable()
+		go func() {
+			out, err := runPull(repoRoot, useRebase)
+			fyne.Do(func() {
+				pullBtn.Enable()
+				rebaseCheck.Enable()
+				if err != nil {
+					statusLabel.SetText("✗ Pull failed:\n" + out)
+					return
+				}
+				summary := fmt.Sprintf("✓ Pulled %s (%s).", upstream, mode)
+				if out != "" {
+					summary += "\n\n" + out
+				}
+				statusLabel.SetText(summary)
+				if onPulled != nil {
+					onPulled()
+				}
+			})
+		}()
+	}
+
+	form := widget.NewForm(
+		widget.NewFormItem("Branch", branchLabel),
+		widget.NewFormItem("Upstream", upstreamLabel),
+		widget.NewFormItem("Resolved URL", resolvedLabel),
+	)
+	content := container.NewVBox(
+		form,
+		rebaseCheck,
+		container.NewHBox(pullBtn),
+		statusLabel,
+	)
+
+	d := dialog.NewCustom("Pull — "+filepathBase(repoRoot), "Close", content, parent)
+	d.Resize(fyne.NewSize(680, 420))
+	d.Show()
 }

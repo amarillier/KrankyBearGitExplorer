@@ -2,76 +2,187 @@
 KrankyBear GitExplorer - RELEASE NOTES
 ═══════════════════════════════════════════════════════════════════════════════
 Future ideas:
-- Remaining basic git management (Phase 7 follow-up):
-  - commit with message, pull, push
-  - remote add / edit URL / remove (single-remote is the common case)
+- Release publishing — replace the manual "go to github.com, draft a
+  release, drag binaries from bin/ and installers/, click Release"
+  flow with an in-app action that parses the matching ReleaseNotes
+  section and uploads the bundled assets via the gh CLI.
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
 
-Version 0.8.0 - May 21, 2026
+Version 0.8.0 - May 22, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-First write-ops surface — the explorer was emphatically pure-read-only
-through v0.5/0.6/0.7 (Branches / Tags / Remotes / Reflog / Stashes /
-Contributors / Repo Health / Repo Config all display-only). v0.8.0
-crosses that line with a small targeted subset: initialise a repo,
-and set the local user.name / user.email identity. Subsequent v0.8.x
-releases will add commit / pull / push and remote management; heavier
-operations (clone, branch, merge) remain deferred since VS Code +
-the CLI already cover them well.
+Phase 7 lands — full set of basic git management actions. The
+explorer was emphatically pure-read-only through v0.5/0.6/0.7
+(Branches / Tags / Remotes / Reflog / Stashes / Contributors / Repo
+Health / Repo Config all display-only). v0.8.0 crosses that line in
+one cohesive landing: initialise a repo, set local user.name /
+user.email identity, manage remotes (including a host-agnostic Build
+URL helper with parallel HTTPS/SSH probing), commit (with stage-all
+and amend), push (with set-upstream auto-detect, GitHub Dependabot
+detection + auto-fetch + per-alert auto-fix, and a non-fast-forward
+rescue row offering pull-first or force-with-lease), and pull (with a
+per-pull rebase-vs-merge override). Heavier operations (clone, branch,
+merge) remain deferred — VS Code + the CLI already cover them well.
 
 ✨ NEW
 ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 - Repo ▾ toolbar dropdown — new button next to View ▾ holding the
-  repo-management actions: Initialize Repository Here…, Local Repo
-  Identity…. Stays enabled regardless of repo state; individual
-  items enable/disable themselves so the right action is reachable
-  whether the current folder is/isn't already a git repo. Future
-  v0.8.x slices (commit, pull, push, remote add/edit/remove) will
-  join this menu.
+  full Phase 7 surface: Commit…, Initialize Repository Here…, Local
+  Repo Identity…, Manage Remotes…, Pull…, Push…. Stays enabled
+  regardless of repo state; individual items enable/disable
+  themselves based on whether the current folder is/isn't a repo
+  (Initialize requires no repo; everything else requires one). The
+  same set lands in its own File-menu section between Refresh and
+  Compare Two Files….
 
-- Initialize Repository Here… — Repo ▾ → Initialize… (also on the
-  File menu in its own section between Refresh and Compare Two
-  Files). Confirms before creating .git, with one configurable
-  field: "Initial branch" pre-seeded from your global
-  init.defaultBranch (falling back to `master` if it's unset).
-    • Per-project branch names from the dialog land instantly —
-      no need for the manual `git branch -M <name>` step after
-      init. Useful if you prefer a project-specific branch name
-      (matching a chosen remote shorthand, say) instead of
-      always `main` / `master`.
-    • Uses go-git's PlainInitWithOptions (DefaultBranch) so HEAD
-      is born already pointing at refs/heads/<chosen>. The branch
-      ref itself materialises on the first commit — until then,
-      HEAD is unborn (this is normal `git init` behaviour and
-      already handled by the explorer's "(no commits)" header
-      label from v0.3.0).
+- Initialize Repository Here… — confirms before creating .git, with
+  one configurable field: "Initial branch" pre-seeded from your
+  global init.defaultBranch (falling back to `master` if unset).
+    • Per-project branch names from the dialog land instantly via
+      go-git's PlainInitWithOptions(DefaultBranch) — no need for
+      the manual `git branch -M <name>` step after init.
     • Existing files in the folder are not touched — only a .git
-      directory is created alongside them. After success, the
-      explorer auto-rebinds to the new repo (rerun of
-      DetectDotGit via loadFolder); the header repaints with the
-      branch + clean/dirty counts immediately.
-    • Minimal branch-name validation up front (no whitespace, no
-      ~^:?*[\, no leading `-`, no trailing `.` or `.lock`, no
-      `..`). Anything subtler that git itself refuses surfaces in
-      a follow-up error dialog with git's own message.
+      directory is created alongside them. The explorer auto-
+      rebinds to the new repo (rerun of DetectDotGit via
+      loadFolder); the header repaints with the branch +
+      clean/dirty counts immediately.
+    • Minimal branch-name validation up front; anything subtler
+      that git itself refuses surfaces in a follow-up error
+      dialog with git's own message.
 
-- Local Repo Identity… — Repo ▾ → Local Repo Identity… (also on the
-  File menu). Edits the repo's own user.name / user.email, saved
-  to .git/config so they override your ~/.gitconfig identity for
-  this repo only. Two fields, seeded from the current --local
-  values; blank fields are treated as "no change" so you can't
-  accidentally clear an identity by emptying a field. Shells out
-  to `git config --local` for writes (same surface as the v0.7.1
-  Repo Config view's reads) — avoids any risk of go-git's config
-  marshaller reordering keys or losing comments on a round-trip.
+- Local Repo Identity… — edits the repo's own user.name /
+  user.email, saved to .git/config so they override your
+  ~/.gitconfig identity for this repo only. Two fields, seeded from
+  the current --local values; blank fields are treated as "no
+  change" so you can't accidentally clear an identity by emptying
+  a field. Shells out to `git config --local` for writes (same
+  surface as the v0.7.1 Repo Config view's reads).
+
+- Manage Remotes… — list of configured remotes with Add / Edit /
+  Remove buttons. The Add/Edit sub-dialog has a single canonical
+  URL field plus two helpers:
+    • HTTPS ⇄ SSH flip button — appears when the URL is in a
+      parseable canonical form (https://host/owner/repo[.git] ⇄
+      git@host:owner/repo[.git]); pure URL-shape transformation,
+      no baked-in host knowledge.
+    • Build URL from host + path… — small sub-dialog that
+      constructs a URL from Host + Path + Scheme inputs. Scheme
+      "Auto-detect" fires both HTTPS and SSH `git ls-remote
+      --heads` probes in parallel (5s timeout each), picks the
+      working scheme, prefers SSH on ties. Generalised — works
+      for any host that uses github-style URL conventions.
+    • Test Connection button on the main dialog — runs a probe
+      against the URL field; on failure offers a one-click
+      retry against the converted form.
+
+- Commit… — multi-line message field with two ergonomic
+  extensions both off by default:
+    • Stage all changes before committing (git add -A) — saves
+      clicks for the common "commit everything" case.
+    • Amend last commit — pre-fills the message field from
+      HEAD's message so you can edit-in-place; blank message
+      uses --amend --no-edit to preserve the prior message.
+      Disabled when HEAD is unborn (no commits to amend yet).
+    Staged-files preview at the top updates dynamically as Stage
+    all is toggled, so you see exactly what would be staged.
+    Pre-validates "nothing staged + stage-all off + not amending"
+    before invoking git, surfacing a clearer error than git's
+    own "nothing to commit." Post-commit dialog shows the new
+    short SHA; the explorer view refreshes so clean/dirty
+    counts, last-commit header line, and sync indicator update.
+    GPG signing follows the user's commit.gpgsign config — no
+    per-commit signing toggle in the UI.
+
+- Push… — shows current branch, configured upstream (or "No
+  upstream configured — this will be the first push"), and the
+  Resolved URL (what git actually uses after any
+  url.<base>.insteadof rewrites). Remote dropdown defaults to the
+  branch's upstream remote when one exists.
+    • "Also set as upstream for this branch" checkbox —
+      auto-shown + ticked when no upstream exists, hidden when
+      one is configured. First push auto-wires tracking.
+    • Dialog stays open during the push so git's progress output
+      is readable; on failure the full git stderr is rendered
+      verbatim in the status area.
+    • Pre-flight catches the unborn-HEAD case (branch ref
+      doesn't exist yet because no commits were made) with a
+      friendlier prompt than git's cryptic "src refspec X does
+      not match any" — offers to open the Commit dialog
+      directly via a Yes/No prompt.
+
+- GitHub Dependabot inline alert on Push — when a successful push
+  triggers GitHub's "GitHub found N vulnerabilities" remote-side
+  message, an inline alert row appears in the Push dialog with the
+  count and severity breakdown plus three buttons:
+    • Open Dependabot alerts — opens the security/dependabot
+      page in your default browser.
+    • Fetch alert details — runs `gh api
+      repos/<owner>/<repo>/dependabot/alerts?state=open` and
+      renders the results in a dedicated dialog. Each alert
+      shows severity badge, package + ecosystem +
+      direct/transitive, advisory summary, vulnerable range,
+      fixed-in version, CVE + GHSA identifiers. Sorted
+      critical → high → moderate → low.
+    • Re-run local dep-scan — fires the existing v0.3.0 Scan
+      Dependencies action for a side-by-side comparison with
+      govulncheck + osv-scanner (which often disagrees with
+      Dependabot since govulncheck does reachability analysis
+      while Dependabot is presence-based).
+    Silent success when GitHub mentions nothing — no banner, no
+    noise.
+
+- Per-alert "Apply fix (go get)" button in the Dependabot
+  details dialog — appears next to each alert's Open advisory
+  button when the alert is for a Go module AND has a known
+  fixed version. Click confirms, then runs `go get
+  pkg@vX.Y.Z` followed by `go mod tidy` in the repo. On
+  success the button flips to "✓ Applied" with green
+  SuccessImportance styling and disables so you can see at a
+  glance which rows have been actioned when working through
+  several alerts. The result info dialog reminds you to commit
+  go.mod + go.sum via Repo ▾ → Commit… to publish the fix.
+  No button when the ecosystem isn't Go or no fixed version
+  is yet available.
+
+- Push rescue row on non-fast-forward rejection — when git
+  refuses a push as non-fast-forward, an inline rescue row
+  appears explaining the two common causes (someone else
+  pushed → pull first; you amended a commit that was already
+  pushed → force-with-lease) and offering both actions as
+  one-click buttons:
+    • Pull first — opens the Pull dialog so you can integrate
+      remote changes before retrying.
+    • Force push (--force-with-lease) — confirms (with explicit
+      explanation of what the lease does and doesn't protect
+      against) then re-runs the push with --force-with-lease.
+      Styled with DangerImportance so it reads as the heavier
+      option. Plain --force is intentionally not exposed.
+
+- Pull… — fetch + integrate from the branch's configured upstream.
+  Refuses to open with a friendly hint pointing at Push when no
+  upstream is configured. Shows current branch, upstream, and
+  resolved URL.
+    • "Rebase instead of merge (--rebase)" checkbox —
+      pre-seeded from your `pull.rebase` config so it honours
+      your existing preference, overridable per-pull. Runs
+      git pull with an explicit --rebase / --no-rebase so the
+      checkbox always wins.
+    • Dialog stays open during the operation so the merge or
+      rebase summary (and any conflict messages) is readable
+      verbatim. Conflict resolution stays in your editor / CLI
+      — there's no in-app resolver, by design.
+    • On success the explorer refreshes so the file list,
+      header counts, and remote-sync indicator all reflect the
+      new HEAD.
 
 🔧 CHANGED
 ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 - File menu reshuffle — new separator-bounded section between
-  Refresh and Compare Two Files… holds the repo-management
-  actions (Initialize Repository Here…, Local Repo Identity…),
-  alphabetised within. Surfaces the same actions as Repo ▾ via
-  the menu bar for users who prefer the menu route, with
-  disable-state that follows the current folder's repo status.
+  Refresh and Compare Two Files… holds the Phase 7 actions
+  (Commit…, Initialize Repository Here…, Local Repo Identity…,
+  Manage Remotes…, Pull…, Push…), alphabetised within. Surfaces
+  the same actions as Repo ▾ via the menu bar for users who
+  prefer the menu route, with disable-state that follows the
+  current folder's repo status.
 
 
 Version 0.7.1 - May 20, 2026

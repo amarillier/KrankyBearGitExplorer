@@ -208,6 +208,9 @@ This is an active rebuild on top of [KrankyBearDiff](https://github.com/amarilli
 - `git rm --cached` shells out to the `git` CLI (`git -C <repo> rm --cached`); requires `git` on `PATH`. Same for `git stash list`, `git count-objects`, `git fsck`, `git ls-remote`, and the local sync read.
 - The Diff against HEAD and Historical Diff views are read-only at the data-mutation level — the per-pane Browse / Recent / Reload buttons on the read-only side are present but no-op; a future polish pass will hide them.
 
+## Screenshots
+Coming, not here yet
+
 ## Dependencies
 
 - [Fyne](https://fyne.io/) v2.7.x — cross-platform Go GUI toolkit (requires OpenGL).
