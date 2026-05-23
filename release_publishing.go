@@ -436,11 +436,26 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 						defer cancel2()
 						out, releaseURL, runErr := runReleaseCreate(ctx2, owner, repoName, tag, title, notes, selected, prereleaseCheck.Checked, draftCheck.Checked)
 						fyne.Do(func() {
-							publishBtn.Enable()
 							if runErr != nil {
+								// Re-enable for retry on failure — the
+								// publish didn't land, so let the user
+								// try again after fixing the cause.
+								publishBtn.Enable()
 								statusLabel.SetText("✗ Publish failed:\n" + out)
 								return
 							}
+							// Flip the Publish button into a clearly
+							// "done" state — same green-SuccessImportance
+							// pattern as the Dependabot Apply-fix button
+							// — so it's obvious at a glance that this
+							// dialog's work is complete. Stays disabled;
+							// re-publishing requires reopening the
+							// dialog anyway (the overwrite-confirm
+							// flow handles that path).
+							publishBtn.SetText("✓ Published")
+							publishBtn.Importance = widget.SuccessImportance
+							publishBtn.Refresh()
+							publishBtn.Disable()
 							summary := fmt.Sprintf("✓ Published %s to %s/%s.", tag, owner, repoName)
 							if out != "" {
 								summary += "\n\n" + out
