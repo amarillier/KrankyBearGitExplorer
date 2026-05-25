@@ -684,7 +684,15 @@ func (v *explorerView) doLoadFolder(abs string) {
 	v.selectedFileRel = ""
 	v.selectedFileAbs = ""
 
-	v.resetFilters()
+	// Only reset filters when the repo context changes — intra-repo
+	// navigation (into subdirs, back up to the root) preserves the
+	// user's filter intent. A filter like "Only dirty" expresses what
+	// they want to see in *this* project; walking around inside it
+	// shouldn't keep flipping it off. Repo switches still reset, so
+	// stale filters from a previous project don't follow you across.
+	if prevRepoRoot != targetRoot {
+		v.resetFilters()
+	}
 
 	v.repoModel = nil
 	v.repo = nil
@@ -919,8 +927,10 @@ func (v *explorerView) refreshRemoteSync() {
 }
 
 // resetFilters clears the filter state and the widgets back to defaults.
-// Called on folder change so each project starts from a clean slate — no
-// stale "I forgot the filter was on" moments after switching repos.
+// Called on repo switch (not on intra-repo navigation) so each project
+// starts from a clean slate — no stale "I forgot the filter was on"
+// moments after switching repos, while filter intent ("Only dirty") is
+// preserved as you browse around inside a single repo.
 func (v *explorerView) resetFilters() {
 	v.filter = explorerFilter{}
 	if v.filterEntry == nil {

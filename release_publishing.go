@@ -22,13 +22,14 @@ import (
 
 // release_publishing.go — v0.9.0 GitHub-release composer + uploader.
 //
-// Replaces the manual "go to github.com → draft a release → drag
-// binaries → click Release" flow with a single dialog that
-// auto-fills tag + title + notes (parsed from ReleaseNotes.txt),
-// auto-discovers assets in bin/ + installers/, and uploads via the
-// gh CLI. Strictly host-scoped to github.com — the only release
-// platform the gh CLI supports — so the dialog refuses to open for
-// repos without a github.com remote.
+// Replaces the manual "go to github → draft a release → drag binaries
+// → click Release" flow with a single dialog that auto-fills tag +
+// title + notes (parsed from ReleaseNotes.txt), auto-discovers assets
+// in bin/ + installers/, and uploads via the gh CLI. Works against
+// github.com and GitHub Enterprise Server (GHES) instances — for GHES,
+// the user must have run `gh auth login --hostname <ghes-host>` once
+// so the gh CLI knows the host is github-compatible. When a repo has
+// both a github.com remote and a GHES remote, github.com wins.
 
 // releaseAssetDirs are the conventional subdirectories the dialog
 // scans for upload candidates. Order matters for display (binaries
@@ -156,34 +157,82 @@ func extractReleaseNotes(repoRoot, version string) (notesPath, body string, err 
 	return notesPath, body, nil
 }
 
-// findGitHubOwnerRepo iterates the repo's configured remotes and
-// returns the first github.com remote's owner + repo path. Used to
-// scope gh release commands with an explicit --repo flag rather than
-// relying on gh's own auto-detection (which can pick the wrong remote
-// when multiple are configured).
-func findGitHubOwnerRepo(repo *git.Repository) (owner, repoName string, ok bool) {
+// ghHostAuthenticated reports whether gh has a token stored for host.
+// Used to decide which non-github.com remotes are GHES candidates —
+// gh's own auth state is the source of truth (we don't try to sniff
+// GHES vs GitLab vs Gitea ourselves). A short timeout protects against
+// a hung keyring or VPN-required host that's currently unreachable.
+func ghHostAuthenticated(host string) bool {
+	if host == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "gh", "auth", "status", "--hostname", host).Run() == nil
+}
+
+// findGitHubReleaseTarget iterates the repo's configured remotes and
+// returns the host + owner + repo for the best github-compatible
+// release target. Preference order:
+//  1. github.com (any matching remote wins immediately)
+//  2. any other host where `gh auth status --hostname <h>` succeeds,
+//     treated as a GitHub Enterprise Server instance
+//
+// The explicit host return lets the caller pass `--repo HOST/OWNER/REPO`
+// to every gh command, which is how gh routes API calls to a specific
+// GHES instance instead of github.com.
+func findGitHubReleaseTarget(repo *git.Repository) (host, owner, repoName string, ok bool) {
 	remotes, err := repo.Remotes()
 	if err != nil {
-		return "", "", false
+		return "", "", "", false
 	}
+	type candidate struct{ host, owner, repo string }
+	var ghesCandidates []candidate
 	for _, r := range remotes {
 		cfg := r.Config()
 		if cfg == nil {
 			continue
 		}
 		for _, u := range cfg.URLs {
-			host, path, _, _, parsed := parseGitURL(u)
-			if !parsed || !strings.EqualFold(host, "github.com") {
+			h, path, _, _, parsed := parseGitURL(u)
+			if !parsed {
 				continue
 			}
 			parts := strings.SplitN(path, "/", 2)
 			if len(parts) != 2 {
 				continue
 			}
-			return parts[0], strings.TrimSuffix(parts[1], ".git"), true
+			o := parts[0]
+			n := strings.TrimSuffix(parts[1], ".git")
+			if strings.EqualFold(h, "github.com") {
+				return "github.com", o, n, true
+			}
+			ghesCandidates = append(ghesCandidates, candidate{h, o, n})
 		}
 	}
-	return "", "", false
+	for _, c := range ghesCandidates {
+		if ghHostAuthenticated(c.host) {
+			return c.host, c.owner, c.repo, true
+		}
+	}
+	return "", "", "", false
+}
+
+// repoArg builds the HOST/OWNER/REPO value passed to gh's --repo flag.
+// Always host-prefixed (even for github.com) so a single code path
+// handles both github.com and GHES; gh accepts either form.
+func repoArg(host, owner, repoName string) string {
+	return host + "/" + owner + "/" + repoName
+}
+
+// authLoginHint returns the exact `gh auth login` command the user
+// should run to authenticate against host. Surfaced in auth-failure
+// errors so the fix is copy-pasteable.
+func authLoginHint(host string) string {
+	if host == "" || strings.EqualFold(host, "github.com") {
+		return "gh auth login"
+	}
+	return "gh auth login --hostname " + host
 }
 
 // releaseTagExists checks via `gh release view` whether a release with
@@ -191,11 +240,11 @@ func findGitHubOwnerRepo(repo *git.Repository) (owner, repoName string, ok bool)
 // (including the "release not found" 404) → false. Network / auth
 // failures bubble up as err so the caller can distinguish "couldn't
 // check" from "doesn't exist".
-func releaseTagExists(ctx context.Context, owner, repoName, tag string) (bool, error) {
+func releaseTagExists(ctx context.Context, host, owner, repoName, tag string) (bool, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return false, fmt.Errorf("gh CLI not found on PATH — install from https://cli.github.com/ to enable release publishing")
 	}
-	cmd := exec.CommandContext(ctx, "gh", "release", "view", tag, "--repo", owner+"/"+repoName)
+	cmd := exec.CommandContext(ctx, "gh", "release", "view", tag, "--repo", repoArg(host, owner, repoName))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return true, nil
@@ -208,7 +257,7 @@ func releaseTagExists(ctx context.Context, owner, repoName, tag string) (bool, e
 		return false, nil
 	}
 	if strings.Contains(stderr, "Bad credentials") || strings.Contains(stderr, "authentication") || strings.Contains(stderr, "401") {
-		return false, fmt.Errorf("gh CLI is not authenticated — run `gh auth login` in a terminal, then retry")
+		return false, fmt.Errorf("gh CLI is not authenticated for %s — run `%s` in a terminal, then retry", host, authLoginHint(host))
 	}
 	return false, fmt.Errorf("gh release view: %w\n%s", err, stderr)
 }
@@ -217,8 +266,8 @@ func releaseTagExists(ctx context.Context, owner, repoName, tag string) (bool, e
 // "overwrite existing release" flow. The associated git tag is also
 // removed via --cleanup-tag so the subsequent create can re-establish
 // it on the current HEAD.
-func deleteReleaseTag(ctx context.Context, owner, repoName, tag string) (string, error) {
-	cmd := exec.CommandContext(ctx, "gh", "release", "delete", tag, "--repo", owner+"/"+repoName, "--yes", "--cleanup-tag")
+func deleteReleaseTag(ctx context.Context, host, owner, repoName, tag string) (string, error) {
+	cmd := exec.CommandContext(ctx, "gh", "release", "delete", tag, "--repo", repoArg(host, owner, repoName), "--yes", "--cleanup-tag")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return strings.TrimSpace(string(out)), fmt.Errorf("gh release delete: %w\n%s", err, strings.TrimSpace(string(out)))
@@ -231,7 +280,7 @@ func deleteReleaseTag(ctx context.Context, owner, repoName, tag string) (string,
 // multi-line content (with newlines, special chars) round-trips
 // cleanly — gh's --notes flag would force shell escaping that's
 // fragile for prose. Tempfile is removed in a deferred Remove.
-func runReleaseCreate(ctx context.Context, owner, repoName, tag, title, notes string, assets []string, prerelease, draft bool) (output string, releaseURL string, err error) {
+func runReleaseCreate(ctx context.Context, host, owner, repoName, tag, title, notes string, assets []string, prerelease, draft bool) (output string, releaseURL string, err error) {
 	notesFile, err := os.CreateTemp("", "kbgitexplorer-release-notes-*.md")
 	if err != nil {
 		return "", "", fmt.Errorf("create temp notes file: %w", err)
@@ -244,7 +293,7 @@ func runReleaseCreate(ctx context.Context, owner, repoName, tag, title, notes st
 	notesFile.Close()
 
 	args := []string{"release", "create", tag,
-		"--repo", owner + "/" + repoName,
+		"--repo", repoArg(host, owner, repoName),
 		"--title", title,
 		"--notes-file", notesFile.Name(),
 	}
@@ -262,7 +311,7 @@ func runReleaseCreate(ctx context.Context, owner, repoName, tag, title, notes st
 		return output, "", fmt.Errorf("gh release create: %w\n%s", e, output)
 	}
 	// gh prints the release URL on its own line in the success
-	// output (e.g. "https://github.com/owner/repo/releases/tag/v0.9.0").
+	// output (e.g. "https://<host>/owner/repo/releases/tag/v0.9.0").
 	// Pluck it out so the success dialog can offer an Open button.
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
@@ -271,9 +320,10 @@ func runReleaseCreate(ctx context.Context, owner, repoName, tag, title, notes st
 			break
 		}
 	}
-	// Fallback: synthesise the canonical URL from the tag.
+	// Fallback: synthesise the canonical URL from the tag using the
+	// actual host so GHES instances get the right link.
 	if releaseURL == "" {
-		releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", owner, repoName, tag)
+		releaseURL = fmt.Sprintf("https://%s/%s/%s/releases/tag/%s", host, owner, repoName, tag)
 	}
 	return output, releaseURL, nil
 }
@@ -298,9 +348,9 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 	if repo == nil || repoRoot == "" {
 		return
 	}
-	owner, repoName, ok := findGitHubOwnerRepo(repo)
+	host, owner, repoName, ok := findGitHubReleaseTarget(repo)
 	if !ok {
-		dialog.ShowError(fmt.Errorf("no github.com remote configured for this repo — Release publishing requires a github.com remote. Add one via Repo ▾ → Manage Remotes… first."), parent)
+		dialog.ShowError(fmt.Errorf("no github-compatible remote found for this repo — Release publishing needs either a github.com remote, or a GitHub Enterprise Server remote that gh is authenticated against (run `gh auth login --hostname <your-ghes-host>` first). Add or check remotes via Repo ▾ → Manage Remotes…."), parent)
 		return
 	}
 	if _, err := exec.LookPath("gh"); err != nil {
@@ -334,7 +384,14 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 	targetLabel.TextStyle = fyne.TextStyle{Italic: true}
 	targetLabel.Wrapping = fyne.TextWrapWord
 
-	repoLabel := widget.NewLabel(owner + "/" + repoName)
+	// Show the host prefix when it isn't github.com so it's visually
+	// obvious which instance the release will land on — important when
+	// the user has both a github.com remote and a GHES remote configured.
+	repoDisplay := owner + "/" + repoName
+	if !strings.EqualFold(host, "github.com") {
+		repoDisplay = host + "/" + repoDisplay
+	}
+	repoLabel := widget.NewLabel(repoDisplay)
 	repoLabel.TextStyle = fyne.TextStyle{Monospace: true}
 
 	notesEntry := widget.NewMultiLineEntry()
@@ -421,7 +478,7 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			exists, checkErr := releaseTagExists(ctx, owner, repoName, tag)
+			exists, checkErr := releaseTagExists(ctx, host, owner, repoName, tag)
 			fyne.Do(func() {
 				if checkErr != nil {
 					publishBtn.Enable()
@@ -434,7 +491,7 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 					go func() {
 						ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Minute)
 						defer cancel2()
-						out, releaseURL, runErr := runReleaseCreate(ctx2, owner, repoName, tag, title, notes, selected, prereleaseCheck.Checked, draftCheck.Checked)
+						out, releaseURL, runErr := runReleaseCreate(ctx2, host, owner, repoName, tag, title, notes, selected, prereleaseCheck.Checked, draftCheck.Checked)
 						fyne.Do(func() {
 							if runErr != nil {
 								// Re-enable for retry on failure — the
@@ -456,7 +513,7 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 							publishBtn.Importance = widget.SuccessImportance
 							publishBtn.Refresh()
 							publishBtn.Disable()
-							summary := fmt.Sprintf("✓ Published %s to %s/%s.", tag, owner, repoName)
+							summary := fmt.Sprintf("✓ Published %s to %s.", tag, repoArg(host, owner, repoName))
 							if out != "" {
 								summary += "\n\n" + out
 							}
@@ -479,8 +536,8 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 				// so the git tag is removed too) then creates fresh, since
 				// gh release create won't replace an existing release.
 				dialog.ShowConfirm("Release already exists",
-					fmt.Sprintf("A release with tag %q already exists at github.com/%s/%s.\n\nOverwrite it? This deletes the existing release (and its tag) first, then re-creates with your new content.\n\nThe download counts and any external links to the old release will be lost.",
-						tag, owner, repoName),
+					fmt.Sprintf("A release with tag %q already exists at %s/%s/%s.\n\nOverwrite it? This deletes the existing release (and its tag) first, then re-creates with your new content.\n\nThe download counts and any external links to the old release will be lost.",
+						tag, host, owner, repoName),
 					func(confirmed bool) {
 						if !confirmed {
 							publishBtn.Enable()
@@ -491,7 +548,7 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 						go func() {
 							ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
 							defer cancel2()
-							delOut, delErr := deleteReleaseTag(ctx2, owner, repoName, tag)
+							delOut, delErr := deleteReleaseTag(ctx2, host, owner, repoName, tag)
 							fyne.Do(func() {
 								if delErr != nil {
 									publishBtn.Enable()
