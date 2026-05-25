@@ -4,6 +4,107 @@ KrankyBear GitExplorer - RELEASE NOTES
 Future ideas:
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
 
+Version 0.9.2 - May 25, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Release publishing now reaches GitHub Enterprise Server (GHES) in
+addition to github.com. The v0.9.0 dialog was hard-scoped to
+github.com because that's all `gh` officially advertised; in practice
+`gh` works fine against GHES once you've authenticated to that host,
+so the dialog now picks up any GHES remote `gh` knows about and
+routes the release there.
+
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Release… now publishes to GitHub Enterprise Server — if your
+  repo has a remote pointing at a GHES instance (e.g.
+  git@your-ghes-host:owner/repo.git) and you've authenticated
+  `gh` against that host, Release… targets it automatically. The
+  rest of the dialog — tag, title, notes auto-extraction, asset
+  discovery, pre-release / draft, overwrite-confirm — behaves
+  identically to the github.com path.
+    • Host selection rule: if a repo has both a github.com remote
+      and a GHES remote, github.com wins (matches the "public
+      release goes to the public mirror" intuition). With only a
+      GHES remote, GHES is used.
+    • GHES detection: the dialog asks `gh auth status --hostname
+      <host>` for each non-github.com remote and accepts the
+      first host gh reports as logged in. gh's own auth state is
+      the source of truth — no separate config in this app.
+    • Dialog feedback: the Repo row shows `host/owner/repo` when
+      the host isn't github.com, so it's visually obvious which
+      instance the release will land on. The overwrite-confirm
+      dialog and the success message now show the real host too.
+    • "Open release on GitHub" button still works — the synthesised
+      release URL uses the actual host instead of always saying
+      github.com.
+    • Auth-failure errors now include the exact command to run,
+      e.g. `gh auth login --hostname git.corp.tanium.com`, so the
+      fix is copy-pasteable.
+
+🛠 ONE-TIME SETUP FOR GHES (per machine, per host)
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+If you've never published a release from this machine to your
+GHES instance before, do this once:
+
+  1. Create a Personal Access Token (PAT) in the GHES web UI:
+     • Open your GHES instance in a browser → click your avatar
+       → Settings → Developer settings → Personal access tokens
+       → Tokens (classic) → Generate new token.
+     • Scopes required for Release publishing:
+         - `repo`            (read + write repo contents, create
+                              releases, upload release assets)
+       Optional, only if you also want gh to drive other things:
+         - `workflow`        (trigger / read GitHub Actions)
+         - `read:org`        (list org repos for `gh repo list`)
+     • Set an expiry that matches your team's policy (90 days is
+       a common default; longer means fewer re-auths but more
+       blast radius if the token leaks).
+     • Copy the token (you only see it once).
+
+  2. If your GHES org has SAML SSO enforced, click "Configure
+     SSO" / "Authorize" next to the new token in the PAT list
+     for each org you need to release into. Without this step,
+     `gh release create` against an SSO-protected repo will fail
+     with "Resource protected by SSO" even though the token
+     itself is valid.
+
+  3. Tell `gh` about the host:
+        gh auth login --hostname <your-ghes-host>
+     Choose:
+        • HTTPS as the protocol
+        • "Paste an authentication token" when prompted
+        • Paste the PAT from step 1
+     (Or, if your GHES has device-flow enabled, pick "Login with
+     a web browser" instead of pasting.)
+
+  4. Verify the wiring with two read-only checks:
+        gh auth status --hostname <your-ghes-host>
+        gh release list --repo <your-ghes-host>/<owner>/<repo>
+     The first should say "Logged in to <host> account <you>";
+     the second should return either an empty list or your
+     existing releases without error. If both succeed, the
+     Release… dialog in this app will Just Work.
+
+  5. VPN reminder: GHES instances on corporate networks
+     typically require VPN connectivity for both git push *and*
+     gh API calls. If gh times out or returns "could not
+     resolve host", check your VPN before assuming the auth is
+     broken.
+
+🔧 IMPROVEMENTS
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Auth-error messages now include the host that failed, so when
+  you have credentials for multiple GitHub hosts (github.com +
+  one or more GHES instances) it's clear which one needs
+  re-auth.
+- The "no remote configured" error message now explains both
+  paths — add a github.com remote, OR add a GHES remote and run
+  `gh auth login --hostname <host>` — instead of only mentioning
+  github.com.
+- File-level intro comment updated to reflect GHES support; the
+  v0.9.0 "github.com-only" wording was already stale by the time
+  it was committed.
+
 Version 0.9.1 - May 23, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Minor update for repo release button improvement, disable after successful release
