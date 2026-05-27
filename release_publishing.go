@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -105,6 +106,38 @@ func discoverReleaseAssets(repoRoot string) ([]releaseAsset, error) {
 		return assets[i].DisplayPath < assets[j].DisplayPath
 	})
 	return assets, nil
+}
+
+// detectReleaseVersion finds the target repo's intended release version
+// so the Release dialog defaults reflect the repo being released, not
+// the explorer tool itself. FyneApp.toml is the source of truth for
+// Allan's Fyne projects (its Version field is what gets baked into the
+// binary). For non-Fyne repos we fall back to the newest semver-shaped
+// git tag — slightly off (that's the previous release, not the one
+// being prepared), but better than no signal. Returns "" when neither
+// source yields anything, in which case the dialog opens with empty
+// Tag/Title for the user to fill in by hand.
+func detectReleaseVersion(repoRoot string) string {
+	if b, err := os.ReadFile(filepath.Join(repoRoot, "FyneApp.toml")); err == nil {
+		re := regexp.MustCompile(`(?m)^\s*Version\s*=\s*["']([^"']+)["']`)
+		if m := re.FindSubmatch(b); m != nil {
+			return string(m[1])
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "tag", "--list", "--sort=-v:refname").Output()
+	if err != nil {
+		return ""
+	}
+	tagRe := regexp.MustCompile(`^v?(\d+\.\d+\.\d+(?:[-+.][\w.-]+)?)$`)
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if m := tagRe.FindStringSubmatch(line); m != nil {
+			return m[1]
+		}
+	}
+	return ""
 }
 
 // extractReleaseNotes reads ReleaseNotes.txt (or whichever candidate
@@ -342,8 +375,12 @@ func shortHeadSummary(repoRoot string) string {
 
 // showReleaseDialog is the entry point for Repo ▾ → Release… / File
 // menu → Release…. Composes a publish-to-GitHub release operation
-// from the current repo's appVersion, ReleaseNotes.txt, and the
-// contents of bin/ + installers/.
+// from the target repo's detected version (FyneApp.toml or latest
+// semver tag), its ReleaseNotes.txt, and the contents of bin/ +
+// installers/. The version is read from the *target* repo (the one
+// open in the explorer), not from the explorer's own appVersion —
+// otherwise releasing TaniumQuest would pre-fill with the explorer's
+// version, which is never what you want.
 func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string) {
 	if repo == nil || repoRoot == "" {
 		return
@@ -358,10 +395,15 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 		return
 	}
 
-	defaultTag := "v" + appVersion
-	defaultTitle := fmt.Sprintf("v%s - %s", appVersion, time.Now().Format("January 2, 2006"))
-
-	notesPath, defaultNotes, notesErr := extractReleaseNotes(repoRoot, appVersion)
+	repoVer := detectReleaseVersion(repoRoot)
+	var defaultTag, defaultTitle string
+	var notesPath, defaultNotes string
+	var notesErr error
+	if repoVer != "" {
+		defaultTag = "v" + repoVer
+		defaultTitle = fmt.Sprintf("v%s - %s", repoVer, time.Now().Format("January 2, 2006"))
+		notesPath, defaultNotes, notesErr = extractReleaseNotes(repoRoot, repoVer)
+	}
 
 	assets, err := discoverReleaseAssets(repoRoot)
 	if err != nil {
@@ -402,18 +444,22 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 	notesHint.Wrapping = fyne.TextWrapWord
 	notesHint.TextStyle = fyne.TextStyle{Italic: true}
 	switch {
+	case repoVer == "":
+		notesHint.SetText("Couldn't detect a version for this repo (no FyneApp.toml, no semver tags) — fill in Tag/Title and paste release notes above.")
 	case notesPath == "":
 		notesHint.SetText("No ReleaseNotes.txt / CHANGELOG.md found in repo root — paste your release notes above.")
 	case notesErr != nil:
-		notesHint.SetText(fmt.Sprintf("Couldn't extract notes for v%s from %s — paste your notes above. (%v)", appVersion, filepath.Base(notesPath), notesErr))
+		notesHint.SetText(fmt.Sprintf("Couldn't extract notes for v%s from %s — paste your notes above. (%v)", repoVer, filepath.Base(notesPath), notesErr))
 	default:
 		notesHint.SetText(fmt.Sprintf("Prefilled from %s — edit before publishing if needed.", filepath.Base(notesPath)))
 	}
 
 	// Assets list. Each row is a checkbox + display path + size, plus
 	// an inline ⚠ warning when the filename embeds a version that
-	// doesn't match appVersion (the typical sign you forgot to
-	// recompile after a version bump).
+	// doesn't match the target repo's detected version (the typical
+	// sign you forgot to recompile after a version bump). Suppressed
+	// when no version was detected, since we'd have nothing to compare
+	// against and would spam a warning on every asset.
 	type assetRow struct {
 		check *widget.Check
 		asset releaseAsset
@@ -430,8 +476,8 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 		sizeLabel.TextStyle = fyne.TextStyle{Italic: true}
 		warnLabel := widget.NewLabel("")
 		warnLabel.TextStyle = fyne.TextStyle{Italic: true}
-		if asset.VersionInName != "" && asset.VersionInName != appVersion {
-			warnLabel.SetText(fmt.Sprintf("⚠ filename version %s ≠ %s", asset.VersionInName, appVersion))
+		if asset.VersionInName != "" && repoVer != "" && asset.VersionInName != repoVer {
+			warnLabel.SetText(fmt.Sprintf("⚠ filename version %s ≠ %s", asset.VersionInName, repoVer))
 		}
 		row := container.NewBorder(nil, nil, check, sizeLabel, container.NewHBox(nameLabel, warnLabel))
 		assetsCol.Add(row)
@@ -580,22 +626,47 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 		widget.NewLabelWithStyle(fmt.Sprintf("Assets (%d found)", len(assetRows)), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		assetsScroll,
 	)
-	content := container.NewVBox(
+	// Footer is pinned outside the scroll so Publish + Close + the
+	// pre-release/draft toggles stay visible regardless of how far the
+	// user has scrolled through the asset list. Previously these lived
+	// at the bottom of the scroll, which meant on shorter dialog heights
+	// you had to scroll past the assets to find the Publish button.
+	scrollContent := container.NewVBox(
 		form,
 		widget.NewSeparator(),
 		notesSection,
 		widget.NewSeparator(),
 		assetsSection,
-		widget.NewSeparator(),
+	)
+	scroll := container.NewVScroll(scrollContent)
+	scroll.SetMinSize(fyne.NewSize(760, 420))
+
+	var d *dialog.CustomDialog
+	closeBtn := widget.NewButton("Close", func() {
+		if d != nil {
+			d.Hide()
+		}
+	})
+	footerRow := container.NewHBox(
 		prereleaseCheck,
 		draftCheck,
-		container.NewHBox(publishBtn, openReleaseBtn),
-		statusLabel,
+		layout.NewSpacer(),
+		openReleaseBtn,
+		publishBtn,
+		closeBtn,
 	)
-	scroll := container.NewVScroll(content)
-	scroll.SetMinSize(fyne.NewSize(760, 600))
+	footer := container.NewVBox(
+		widget.NewSeparator(),
+		statusLabel,
+		footerRow,
+	)
+	root := container.NewBorder(nil, footer, nil, nil, scroll)
 
-	d := dialog.NewCustom("Release — v"+appVersion, "Close", scroll, parent)
+	dialogTitle := "Release"
+	if repoVer != "" {
+		dialogTitle = "Release — v" + repoVer
+	}
+	d = dialog.NewCustomWithoutButtons(dialogTitle, root, parent)
 	d.Resize(fyne.NewSize(820, 720))
 	d.Show()
 }
