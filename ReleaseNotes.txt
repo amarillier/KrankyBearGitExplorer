@@ -4,8 +4,64 @@ KrankyBear GitExplorer - RELEASE NOTES
 Future ideas:
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
 - git log: --oneline, --stat, --decorate, after rebase - committer vs. author, -p -1 <file>, parent SHAs for merges?, trailers highlighted?
-- After successful push to remote, change push button color to make clear push completed successfully
 
+Probably:
+- Any way to detect release is up to date and indicate no need for another release?
+
+
+
+Version 0.9.4 - May 29, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Three small UX wins for daily-driver use: clearer
+post-push feedback, a plain-text patch viewer that
+mirrors git log -p at the shell, and an "is this repo
+already released?" indicator so you don't ship a no-op
+release.
+
+Previously the push button just disabled and re-enabled
+during a push, with success or failure relegated to a
+status text line that was easy to miss. The git log -p
+viewer gives you the shell-style patch dump without
+dropping to a terminal. The release-status indicator
+stops you from accidentally re-publishing when nothing
+has changed since the last tag — a real risk when you
+bounce between projects.
+
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Push button turns green and reads "✓ Pushed" after a
+  successful push (or force-with-lease push). Resets to
+  the default blue "Push" on the next Push tap, or when
+  the dialog is reopened on a different repo.
+
+- New "git log -p…" view dumps plain-text patches into
+  a monospace viewer, just as you'd see at the shell.
+  Repo-wide entry points: View ▾ dropdown, View menu,
+  and system tray. Per-file entry point: right-click
+  any tracked file → "git log -p for this file…". An N
+  selector (1, 5, 10, 25, 100) controls how many
+  commits' patches to dump; changing it refetches
+  immediately. Complements Repo History — that view is
+  the structured click-through diff browser; this one
+  is the unstructured shell-style read.
+
+- Release-status indicator on the explorer header shows
+  whether HEAD is at the latest semver tag:
+    • "released vX.Y.Z" — HEAD is at the tag (nothing
+      new to release).
+    • "↑N since vX.Y.Z" — N commits since the last tag
+      (ready to release).
+    • "no release tag" — repo has never been released.
+  The Release… dialog now opens with a matching banner
+  at the top:
+    • ⚠ HEAD already at vX.Y.Z — publishing would
+      re-release the same code.
+    • ✓ N commit(s) since vX.Y.Z — ready to release.
+    • ℹ No prior release detected — this will be the
+      first.
+  The anchor is the latest semver tag, not FyneApp.toml's
+  Version field, so a version-bump commit correctly
+  counts as "ahead" of the last release.
 
 Version 0.9.3 - May 26, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
