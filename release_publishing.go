@@ -405,6 +405,19 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 		notesPath, defaultNotes, notesErr = extractReleaseNotes(repoRoot, repoVer)
 	}
 
+	relStatus := detectReleaseStatus(repoRoot)
+	statusBanner := widget.NewLabel("")
+	statusBanner.Wrapping = fyne.TextWrapWord
+	statusBanner.TextStyle = fyne.TextStyle{Italic: true}
+	switch {
+	case !relStatus.HasRelease:
+		statusBanner.SetText("ℹ No prior release detected — this will be the first.")
+	case relStatus.CommitsSince == 0:
+		statusBanner.SetText(fmt.Sprintf("⚠ HEAD is already at %s (last release). Publishing now would re-release the same code.", relStatus.LatestTag))
+	default:
+		statusBanner.SetText(fmt.Sprintf("✓ %d commit(s) since %s — ready to release.", relStatus.CommitsSince, relStatus.LatestTag))
+	}
+
 	assets, err := discoverReleaseAssets(repoRoot)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("discover assets: %w", err), parent)
@@ -632,6 +645,8 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 	// at the bottom of the scroll, which meant on shorter dialog heights
 	// you had to scroll past the assets to find the Publish button.
 	scrollContent := container.NewVBox(
+		statusBanner,
+		widget.NewSeparator(),
 		form,
 		widget.NewSeparator(),
 		notesSection,
