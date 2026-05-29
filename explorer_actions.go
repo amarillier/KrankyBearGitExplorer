@@ -106,6 +106,11 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 	// already committed (an "added (staged)" file has no commits yet).
 	showHistory.Disabled = !canDiffHEAD
 
+	gitLogP := fyne.NewMenuItem("git log -p for this file…", func() {
+		showGitLogPatchView(v.win, v.repoRoot, e.rel)
+	})
+	gitLogP.Disabled = !canDiffHEAD
+
 	gitAdd := fyne.NewMenuItem("git add (start tracking)…", func() {
 		v.gitAdd(e.name, e.rel)
 	})
@@ -143,6 +148,7 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 		fyne.NewMenuItemSeparator(),
 		blame,
 		diffHEAD,
+		gitLogP,
 		showHistory,
 		fyne.NewMenuItemSeparator(),
 		addIgnore,

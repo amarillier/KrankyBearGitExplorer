@@ -1691,6 +1691,9 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 			summary += "\n\n" + out
 		}
 		statusLabel.SetText(summary)
+		pushBtn.SetText("✓ Pushed")
+		pushBtn.Importance = widget.SuccessImportance
+		pushBtn.Refresh()
 		if alert := parseVulnAlert(out); alert != nil {
 			headline := fmt.Sprintf("⚠ GitHub Security: %d vulnerabilit%s flagged on this push.",
 				alert.count, pluralY(alert.count))
@@ -1749,6 +1752,9 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 	}
 
 	pushBtn.OnTapped = func() {
+		pushBtn.SetText("Push")
+		pushBtn.Importance = widget.HighImportance
+		pushBtn.Refresh()
 		remote := remoteSelect.Selected
 		if remote == "" {
 			statusLabel.SetText("Pick a remote first.")

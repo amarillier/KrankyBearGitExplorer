@@ -46,6 +46,7 @@ type explorerView struct {
 	branchLabel     *widget.Label
 	statusLabel     *widget.Label
 	syncLabel       *widget.Label
+	releaseLabel    *widget.Label
 	lastCommitLabel *widget.Label
 	list        *widget.List
 	tree        *widget.Tree
@@ -204,12 +205,13 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.branchLabel = widget.NewLabel("")
 	v.statusLabel = widget.NewLabel("")
 	v.syncLabel = widget.NewLabel("")
+	v.releaseLabel = widget.NewLabel("")
 	v.lastCommitLabel = widget.NewLabel("")
 	v.lastCommitLabel.TextStyle = fyne.TextStyle{Italic: true}
 	v.lastCommitLabel.Truncation = fyne.TextTruncateEllipsis
 	headerRight := container.NewVBox(
 		v.pathLabel,
-		container.NewHBox(v.branchLabel, v.statusLabel, v.syncLabel),
+		container.NewHBox(v.branchLabel, v.statusLabel, v.syncLabel, v.releaseLabel),
 		v.lastCommitLabel,
 	)
 
@@ -268,7 +270,7 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 		pos.Y += v.viewBtn.Size().Height
 		widget.ShowPopUpMenuAtPosition(menu, v.win.Canvas(), pos)
 	})
-	v.viewBtn.SetToolTip("Open a repo data view (Blame, Branches, Contributors, Git Status Legend, Reflog, Remotes, Repo Config, Repo Health, Repo History, Stashes, Tags)")
+	v.viewBtn.SetToolTip("Open a repo data view (Blame, Branches, Contributors, git log -p, Git Status Legend, Reflog, Remotes, Repo Config, Repo Health, Repo History, Stashes, Tags)")
 	v.viewBtn.Importance = widget.LowImportance
 	v.viewBtn.Disable()
 
@@ -843,6 +845,7 @@ func (v *explorerView) refresh() {
 		}
 		v.lastCommitLabel.SetText(latestCommitSummary(v.repo))
 		v.refreshRemoteSync()
+		v.refreshReleaseStatus()
 		v.modeBtn.Enable()
 		v.historyBtn.Enable()
 		v.healthBtn.Enable()
@@ -851,6 +854,7 @@ func (v *explorerView) refresh() {
 		v.branchLabel.SetText("(not a git repository)")
 		v.statusLabel.SetText("")
 		v.syncLabel.SetText("")
+		v.releaseLabel.SetText("")
 		v.lastCommitLabel.SetText("")
 		v.modeBtn.Disable()
 		v.historyBtn.Disable()
@@ -924,6 +928,22 @@ func (v *explorerView) refreshRemoteSync() {
 			v.syncLabel.SetText("  •  " + info.label())
 		})
 	}()
+}
+
+// refreshReleaseStatus paints the header's release indicator: whether
+// HEAD is at the latest semver tag (released) or how many commits sit
+// between the last tag and HEAD. Two `git` shellouts that read local
+// refs only — no network.
+func (v *explorerView) refreshReleaseStatus() {
+	if v.releaseLabel == nil {
+		return
+	}
+	if v.repoRoot == "" {
+		v.releaseLabel.SetText("")
+		return
+	}
+	info := detectReleaseStatus(v.repoRoot)
+	v.releaseLabel.SetText("  •  " + info.label())
 }
 
 // resetFilters clears the filter state and the widgets back to defaults.
@@ -1285,6 +1305,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	repoConfig := fyne.NewMenuItem("Repo Config…", func() { v.showRepoConfig() })
 	reflog := fyne.NewMenuItem("Reflog…", func() { v.openReflog() })
 	contributors := fyne.NewMenuItem("Contributors…", func() { v.showContributors() })
+	gitLogP := fyne.NewMenuItem("git log -p…", func() { showGitLogPatchView(v.win, v.repoRoot, "") })
 	stashes := fyne.NewMenuItem("Stashes…", func() { v.showStashes() })
 
 	view := fyne.NewMenu("View",
@@ -1293,6 +1314,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItemSeparator(),
 		branches,
 		contributors,
+		gitLogP,
 		legend,
 		reflog,
 		remotes,
@@ -1415,10 +1437,11 @@ func (v *explorerView) showBlameForSelection() {
 
 // buildViewDropdownMenu builds the popup menu shown by the toolbar's
 // "View ▾" button. Curated to the data views Allan wants quick access to:
-// per-file (Blame…) plus repo-level (Branches…, Contributors…, Git Status
-// Legend…, Remotes…, Repo Health…, Repo History…, Stashes…, Tags…),
-// alphabetised. Excludes toggles already on the toolbar (Tracked Files /
-// Folder View, Scan Dependencies), theme switches, and pure navigation.
+// per-file (Blame…) plus repo-level (Branches…, Contributors…, git log -p…,
+// Git Status Legend…, Remotes…, Repo Health…, Repo History…, Stashes…,
+// Tags…), alphabetised. Excludes toggles already on the toolbar (Tracked
+// Files / Folder View, Scan Dependencies), theme switches, and pure
+// navigation.
 func (v *explorerView) buildViewDropdownMenu() *fyne.Menu {
 	blame := fyne.NewMenuItem("Blame…", func() { v.showBlameForSelection() })
 	blame.Disabled = !v.canBlameSelection()
@@ -1427,6 +1450,7 @@ func (v *explorerView) buildViewDropdownMenu() *fyne.Menu {
 		blame,
 		fyne.NewMenuItem("Branches…", func() { v.showBranches() }),
 		fyne.NewMenuItem("Contributors…", func() { v.showContributors() }),
+		fyne.NewMenuItem("git log -p…", func() { showGitLogPatchView(v.win, v.repoRoot, "") }),
 		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
 		fyne.NewMenuItem("Reflog…", func() { v.openReflog() }),
 		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
@@ -1713,6 +1737,7 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Branches…", func() { v.showBranches() }),
 		fyne.NewMenuItem("Contributors…", func() { v.showContributors() }),
+		fyne.NewMenuItem("git log -p…", func() { showGitLogPatchView(v.win, v.repoRoot, "") }),
 		fyne.NewMenuItem("Git Status Legend…", func() { v.showStatusLegend() }),
 		fyne.NewMenuItem("Reflog…", func() { v.openReflog() }),
 		fyne.NewMenuItem("Remotes…", func() { v.showRemotes() }),
