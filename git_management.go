@@ -1152,12 +1152,18 @@ func severityRank(s string) int {
 // alerts for the repo. Requires the `gh` CLI installed and
 // authenticated; both failures get a specific actionable hint rather
 // than git's raw stderr. Sorted critical-first.
-func fetchDependabotAlerts(ctx context.Context, owner, repo string) ([]dependabotAlert, error) {
+func fetchDependabotAlerts(ctx context.Context, host, owner, repo string) ([]dependabotAlert, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return nil, fmt.Errorf("gh CLI not found on PATH — install from https://cli.github.com/ to enable Dependabot alert auto-fetch (or use Open Dependabot alerts to view in your browser)")
 	}
 	endpoint := fmt.Sprintf("repos/%s/%s/dependabot/alerts?state=open", owner, repo)
-	cmd := exec.CommandContext(ctx, "gh", "api", endpoint)
+	args := []string{"api", endpoint}
+	// Route to a GitHub Enterprise Server instance when the repo isn't on
+	// github.com; gh's --hostname picks the right host's stored credentials.
+	if host != "" && !strings.EqualFold(host, "github.com") {
+		args = append(args, "--hostname", host)
+	}
+	cmd := exec.CommandContext(ctx, "gh", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		stderr := strings.TrimSpace(string(out))
@@ -1327,8 +1333,11 @@ func showDependabotAlertsDialog(parent fyne.Window, owner, repo, repoRoot string
 		// get` — ecosystem == "go" AND a known fixed version. Both
 		// gates matter: an advisory without a published fix
 		// (FixedVersion == "") has nothing for us to call yet.
+		// repoRoot guard: the aggregate Dependabot view reuses this dialog
+		// for repos that aren't cloned locally (repoRoot == ""), where there's
+		// no working tree to run `go get` against — those render read-only.
 		buttons := container.NewHBox(openBtn)
-		if strings.EqualFold(alert.Ecosystem, "go") && alert.FixedVersion != "" {
+		if repoRoot != "" && strings.EqualFold(alert.Ecosystem, "go") && alert.FixedVersion != "" {
 			fixVersion := alert.FixedVersion
 			if !strings.HasPrefix(fixVersion, "v") {
 				fixVersion = "v" + fixVersion
@@ -1725,7 +1734,8 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 					go func() {
 						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 						defer cancel()
-						alerts, err := fetchDependabotAlerts(ctx, owner, repo)
+						// parseDependabotURL only matches github.com URLs.
+						alerts, err := fetchDependabotAlerts(ctx, "github.com", owner, repo)
 						fyne.Do(func() {
 							fetchAlertsBtn.Enable()
 							fetchAlertsBtn.SetText(originalText)

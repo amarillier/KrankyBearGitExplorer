@@ -1,6 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
@@ -62,6 +66,20 @@ func showPreferences(a fyne.App, v *diffView) {
 	autoRefresh.Checked = a.Preferences().BoolWithFallback(prefAutoRefresh, true)
 	autoRefreshNote := widget.NewLabel("On by default. Watches the current folder + .git/index so external edits (your IDE saving a file, a CLI commit, a branch switch) update the explorer without you hitting Refresh. Events are debounced ~250ms to avoid flicker. Turn off if you'd rather refresh manually.")
 	autoRefreshNote.Wrapping = fyne.TextWrapWord
+
+	dailyDepAlert := widget.NewCheck("Daily background Dependabot scan", nil)
+	dailyDepAlert.Checked = a.Preferences().Bool(prefDailyDepAlertEnabled)
+	dailyDepAlertTime := widget.NewEntry()
+	dailyDepAlertTime.SetText(a.Preferences().StringWithFallback(prefDailyDepAlertTime, "09:00"))
+	dailyDepAlertTime.SetPlaceHolder("HH:MM (24-hour)")
+	dailyDepAlertTime.Validator = func(s string) error {
+		if _, err := time.Parse("15:04", strings.TrimSpace(s)); err != nil {
+			return fmt.Errorf("use 24-hour HH:MM, e.g. 09:00")
+		}
+		return nil
+	}
+	dailyDepAlertNote := widget.NewLabel("Once per day at the set time, sweeps your repos for open GitHub Dependabot alerts and updates the 🛡 header badge — silently, no pop-ups. If the machine is asleep at that time, it runs at the next opportunity after waking (still at most once a day). Needs the gh CLI authenticated (gh auth login). Local dep-scan stays on-demand.")
+	dailyDepAlertNote.Wrapping = fyne.TextWrapWord
 
 	rememberWin := widget.NewCheck("Remember main window size between launches", nil)
 	rememberWin.Checked = a.Preferences().BoolWithFallback(prefRememberWindowSize, false)
@@ -128,6 +146,11 @@ func showPreferences(a fyne.App, v *diffView) {
 		autoRefresh,
 		autoRefreshNote,
 		widget.NewSeparator(),
+		widget.NewLabelWithStyle("Automatic scanning", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		dailyDepAlert,
+		container.NewBorder(nil, nil, widget.NewLabel("Time"), nil, dailyDepAlertTime),
+		dailyDepAlertNote,
+		widget.NewSeparator(),
 		widget.NewLabelWithStyle("Diff view", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		showLineNums,
 		lineNumsNote,
@@ -170,6 +193,12 @@ func showPreferences(a fyne.App, v *diffView) {
 		a.Preferences().SetBool(prefSingleDiffWindow, singleDiff.Checked)
 		a.Preferences().SetBool(prefShowDotGit, showDotGit.Checked)
 		a.Preferences().SetBool(prefAutoRefresh, autoRefresh.Checked)
+		a.Preferences().SetBool(prefDailyDepAlertEnabled, dailyDepAlert.Checked)
+		// Persist the time only when valid; keep the prior value otherwise so a
+		// typo doesn't disable an already-configured schedule.
+		if _, err := time.Parse("15:04", strings.TrimSpace(dailyDepAlertTime.Text)); err == nil {
+			a.Preferences().SetString(prefDailyDepAlertTime, strings.TrimSpace(dailyDepAlertTime.Text))
+		}
 		a.Preferences().SetBool(prefRememberWindowSize, rememberWin.Checked)
 		// Ask the explorer to re-apply preferences (refresh the menu + the
 		// worktree listing in case "Show .git" flipped).
