@@ -18,7 +18,8 @@ The two-pane side-by-side diff tool [KrankyBearDiff](https://github.com/amarilli
   - `git rm --cached` (right-click context menu)
 
   Without `git` on PATH the explorer's core (folder view, tracked-files view, Blame, Diff against HEAD, Repo History, etc.) still works — the features above degrade silently or display a one-line error in the relevant dialog.
-- **Optional**: a `dep-scan` skill or repo-vendored `dep-scan.sh` / `dep-scan.ps1` for the **Scan Dependencies** button — see [README_DEPSCAN.md](README_DEPSCAN.md).
+- **Optional**: a `dep-scan` skill or repo-vendored `dep-scan.sh` / `dep-scan.ps1` for **local dependency scanning** — see [README_DEPSCAN.md](README_DEPSCAN.md).
+- **Optional**: the [`gh` CLI](https://cli.github.com/), authenticated (`gh auth login`), for **GitHub Dependabot scanning** and release publishing. No token is stored by the app — auth is delegated to `gh` (github.com and, for cloned repos, GitHub Enterprise Server via `gh auth login --hostname <host>`).
 
 ## Features
 
@@ -147,14 +148,26 @@ Five small read-only listings under the View menu, the system tray, and the **Vi
 
 All five dialogs use a Border layout where the wide column (Subject / URL / Author) takes the remaining space and narrow columns stay tight; resize the dialog wider and the wide column grows.
 
-### Scan Dependencies
+### Dependency & security scanning
 
-View → Scan Dependencies… (also on the tray and the **Scan** toolbar button) runs the `dep-scan` vulnerability scanner against the current folder:
+Every scan action lives under the **Scan ▾** toolbar dropdown (and is mirrored in the **Repo ▾** dropdown, the File menu, and the tray). Two engines, both for a single repo or all repos at once:
 
-- Non-modal progress dialog while it works.
-- Markdown report rendered in a scrollable rich-text dialog with a Copy-to-clipboard button.
+**Local dep-scan** (offline, no account needed) — runs the `dep-scan` vulnerability scanner (osv-scanner + govulncheck) over a working tree:
+
+- *This folder* — scans the current folder. Works on any folder, not just git repos — `dep-scan` walks for manifests across multiple ecosystems (Go, npm, Python, more via OSV).
+- *All repos* — discovers every git repo under the source folders you set in **Configure local folders…** (seeded from your recent folders; tick repos to skip) and scans them in one aggregated pass.
+- Non-modal progress dialog; the report renders in a scrollable monospace dialog with Copy-to-clipboard. *View last local report* reopens the session's last sweep.
+- A **⚠ deps** header badge shows the last all-repos result (`✓ deps clean` / `⚠ N vuln(s)`); it's a cross-repo aggregate that persists across launches.
 - Script resolution prefers the repo's own `dep-scan.sh` / `dep-scan.ps1` (so teammates get a vendored copy on clone — see [README_DEPSCAN.md](README_DEPSCAN.md)) and falls back to the user-level skill install at `~/.claude/skills/dep-scan/`.
-- Works on any folder, not just git repos — `dep-scan` walks for manifests across multiple ecosystems (Go, npm, Python, more via OSV).
+
+**GitHub Dependabot** (authoritative, GitHub's own continuously-updated advisories for your *pushed* code) — uses the `gh` CLI, so no token is stored by the app; just install `gh` and run `gh auth login`:
+
+- *This repo* — open Dependabot alerts for the current repo, each with **Open advisory** and, for Go modules with a published fix, **Apply fix** (`go get` + `go mod tidy`).
+- *All repos* — checks every repo under the owners/orgs you set in **Configure Dependabot owners…** (seeded from your `gh` login) unioned with your local clones, and shows a per-repo summary grouped by severity (critical → low).
+- Repos that can't be scanned are grouped by reason with advice rather than a vague error: **Dependabot not enabled**, **Not found / no access (404)**, **Authentication needed**, and **Third-party (no admin access)** — locally-cloned repos owned by others, listed with their on-disk paths so you can prune clones you no longer need. Third-party clones are skipped without an API call, so the sweep stays fast.
+- A **🛡** header badge shows the last all-repos result (`🛡 alerts clear` / `🛡 N alert(s)`), separate from the local badge, persisted across launches.
+- **GitHub Enterprise Server**: repos you've cloned locally from an internal host (e.g. `git.corp.tanium.com`) are included automatically once you've run `gh auth login --hostname <host>`. (Org-wide enumeration of un-cloned GHES repos is a planned follow-up; github.com supports both local clones and owner/org enumeration.)
+- **Daily background sweep** (opt-in) — Preferences → Automatic scanning runs the all-repos Dependabot check once a day at a time you choose and refreshes the 🛡 badge silently (no pop-ups). It catches up at the next opportunity if the machine was asleep at the scheduled time, and runs at most once per day.
 
 ### Compare Two Files… (legacy diff tool, preserved)
 
@@ -173,6 +186,7 @@ File → Preferences… (from either window) opens a single dialog:
 - Keep only one diff window open at a time (default on) — opening a new diff closes any prior one to avoid window explosions when clicking through history. Diff windows with unsaved edits are kept open so work is never silently lost.
 - Show .git in folder listings (default off) — surfaces the `.git` directory in the folder view for users who want to drill into git's internals.
 - Auto-refresh when files change outside the app (default on) — watches the current folder + `.git/index` via fsnotify; external edits (your IDE saving a file, a CLI `git commit`, a branch switch) update the explorer automatically. Events are debounced ~250ms so a single `$EDITOR` save coalesces into one refresh. Watching is non-recursive — just the visible folder + the repo's index file — so handle counts stay bounded on large repos.
+- Automatic scanning — **Daily background Dependabot scan** (default off) runs the all-repos Dependabot sweep once a day at a time you set (24-hour `HH:MM`) and refreshes the 🛡 badge silently. Catches up after hibernation (runs at the next opportunity if the machine was asleep at the slot) and runs at most once per day. Needs the `gh` CLI authenticated.
 - Remember main window size between launches.
 - Clear recent files (left / right / both).
 

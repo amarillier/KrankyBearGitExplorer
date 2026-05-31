@@ -47,7 +47,15 @@ type explorerView struct {
 	statusLabel     *widget.Label
 	syncLabel       *widget.Label
 	releaseLabel    *widget.Label
+	depScanLabel    *widget.Label
+	depAlertLabel   *widget.Label
 	lastCommitLabel *widget.Label
+
+	// lastDepScan holds the most recent "Scan All Repos" sweep so the
+	// "View last scan report…" menu item can reopen it without rescanning.
+	// nil until the first sweep this session (the header badge can still be
+	// seeded from preferences across launches without a stored report).
+	lastDepScan *depScanAllResult
 	list        *widget.List
 	tree        *widget.Tree
 	contentArea *fyne.Container
@@ -95,6 +103,11 @@ type explorerView struct {
 	// on every loadFolder; torn down on window close. Driven by the
 	// "Auto-refresh when files change outside the app" preference.
 	watcher *repoWatcher
+
+	// dailyScan, when non-nil, runs the once-daily background Dependabot
+	// sweep at the user-configured time (passive 🛡 badge update). Started on
+	// the master window, restarted on prefs change, stopped on window close.
+	dailyScan *dailyScanScheduler
 
 	// contextPop is the active row context-menu popup, kept so we can tear
 	// down its tooltip layer before opening a new one.
@@ -154,6 +167,7 @@ func openExplorerWindow(a fyne.App, master bool) *explorerView {
 				v.watcher.stop()
 				v.watcher = nil
 			}
+			v.stopDailyScanScheduler()
 			fynetooltip.DestroyWindowToolTipLayer(w.Canvas())
 			v.quitApp()
 		})
@@ -177,8 +191,14 @@ func openExplorerWindow(a fyne.App, master bool) *explorerView {
 		// rebuild the watcher so the new on/off state takes effect without
 		// requiring a folder reload.
 		v.restartWatcher()
+		// Daily-scan time/toggle may have changed — restart the scheduler so
+		// it picks up the new schedule without a relaunch.
+		v.startDailyScanScheduler()
 	}
 	windowShow(w)
+	if master {
+		v.startDailyScanScheduler()
+	}
 	return v
 }
 
@@ -206,12 +226,16 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.statusLabel = widget.NewLabel("")
 	v.syncLabel = widget.NewLabel("")
 	v.releaseLabel = widget.NewLabel("")
+	v.depScanLabel = widget.NewLabel("")
+	v.seedDepScanBadge()
+	v.depAlertLabel = widget.NewLabel("")
+	v.seedDepAlertBadge()
 	v.lastCommitLabel = widget.NewLabel("")
 	v.lastCommitLabel.TextStyle = fyne.TextStyle{Italic: true}
 	v.lastCommitLabel.Truncation = fyne.TextTruncateEllipsis
 	headerRight := container.NewVBox(
 		v.pathLabel,
-		container.NewHBox(v.branchLabel, v.statusLabel, v.syncLabel, v.releaseLabel),
+		container.NewHBox(v.branchLabel, v.statusLabel, v.syncLabel, v.releaseLabel, v.depScanLabel, v.depAlertLabel),
 		v.lastCommitLabel,
 	)
 
@@ -256,8 +280,13 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.healthBtn.Importance = widget.LowImportance
 	v.healthBtn.Disable()
 
-	v.depScanBtn = ttwidget.NewButtonWithIcon("Scan", theme.SearchIcon(), func() { v.runDepScan() })
-	v.depScanBtn.SetToolTip("Run dep-scan against this folder — multi-ecosystem dependency vulnerability scan (osv-scanner + govulncheck)")
+	v.depScanBtn = ttwidget.NewButtonWithIcon("Scan ▾", theme.SearchIcon(), func() {
+		menu := v.buildScanDropdownMenu()
+		pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(v.depScanBtn)
+		pos.Y += v.depScanBtn.Size().Height
+		widget.ShowPopUpMenuAtPosition(menu, v.win.Canvas(), pos)
+	})
+	v.depScanBtn.SetToolTip("Dependency scans — local dep-scan (osv-scanner + govulncheck) or GitHub Dependabot, for this repo or all repos")
 	v.depScanBtn.Importance = widget.LowImportance
 
 	v.diffBtn = ttwidget.NewButtonWithIcon("Diff", theme.ContentCopyIcon(), func() { openDiffWindow(v.app, false) })
@@ -1254,6 +1283,17 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	prefs := fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, nil) })
 
 	scanDeps := fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() })
+	scanAll := fyne.NewMenuItem("Scan All Repos…", func() { v.runDepScanAll() })
+	scanAllCfg := fyne.NewMenuItem("Configure Repos to Scan…", func() { showDepScanConfig(v.app, v.win) })
+	// Always enabled — showLastDepScanReport prompts a fresh sweep when there's
+	// no report yet, which keeps this correct without re-running buildMainMenu
+	// after every scan just to flip the disabled flag.
+	lastScanReport := fyne.NewMenuItem("View Last Scan Report…", func() { v.showLastDepScanReport() })
+
+	depAlertRepo := fyne.NewMenuItem("Dependabot: Check This Repo…", func() { v.checkDependabotAlerts() })
+	depAlertRepo.Disabled = v.repo == nil
+	depAlertAll := fyne.NewMenuItem("Dependabot: Scan All Repos…", func() { v.runDependabotScanAll() })
+	depAlertCfg := fyne.NewMenuItem("Dependabot: Configure Owners…", func() { showDepAlertConfig(v.app, v.win) })
 
 	// Git management entries — disabled state depends on whether the current
 	// folder is inside a repo. buildMainMenu is re-run via refreshMenu on
@@ -1289,6 +1329,12 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItemSeparator(),
 		compare,
 		scanDeps,
+		scanAll,
+		scanAllCfg,
+		lastScanReport,
+		depAlertRepo,
+		depAlertAll,
+		depAlertCfg,
 		fyne.NewMenuItemSeparator(),
 		prefs,
 		fyne.NewMenuItemSeparator(),
@@ -1467,6 +1513,26 @@ func (v *explorerView) buildViewDropdownMenu() *fyne.Menu {
 // Repository Here… (enabled when the current folder is NOT yet a repo)
 // and Local Repo Identity… (enabled when it IS a repo). Future v0.8.x
 // items (Commit, Pull, Push, Remotes management) will join this list.
+// buildScanDropdownMenu backs the toolbar "Scan ▾" button — every dependency
+// scan action in one place: both engines (local dep-scan + GitHub Dependabot),
+// for the current repo or all repos, plus their configuration.
+func (v *explorerView) buildScanDropdownMenu() *fyne.Menu {
+	thisRepoDep := fyne.NewMenuItem("This repo — Dependabot", func() { v.checkDependabotAlerts() })
+	thisRepoDep.Disabled = v.repo == nil
+
+	return fyne.NewMenu("",
+		fyne.NewMenuItem("This folder — local dep-scan", func() { v.runDepScan() }),
+		thisRepoDep,
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("All repos — local dep-scan", func() { v.runDepScanAll() }),
+		fyne.NewMenuItem("All repos — Dependabot", func() { v.runDependabotScanAll() }),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("Configure local folders…", func() { showDepScanConfig(v.app, v.win) }),
+		fyne.NewMenuItem("Configure Dependabot owners…", func() { showDepAlertConfig(v.app, v.win) }),
+		fyne.NewMenuItem("View last local report", func() { v.showLastDepScanReport() }),
+	)
+}
+
 func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
 	init := fyne.NewMenuItem("Initialize Repository Here…", func() { v.initRepoHere() })
 	init.Disabled = v.repo != nil || v.currentPath == ""
@@ -1489,8 +1555,17 @@ func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
 	release := fyne.NewMenuItem("Release…", func() { v.publishRelease() })
 	release.Disabled = v.repo == nil
 
+	// Security/scan section (separated), alphabetised within itself.
+	depRepo := fyne.NewMenuItem("Dependabot: Check This Repo…", func() { v.checkDependabotAlerts() })
+	depRepo.Disabled = v.repo == nil
+	depAll := fyne.NewMenuItem("Dependabot: Scan All Repos…", func() { v.runDependabotScanAll() })
+	scanAllLocal := fyne.NewMenuItem("Scan All Repos (local)…", func() { v.runDepScanAll() })
+	scanThisLocal := fyne.NewMenuItem("Scan This Folder (local)…", func() { v.runDepScan() })
+
 	// Alphabetised: Commit, Initialize, Local Repo Identity, Manage Remotes, Pull, Push, Release.
-	return fyne.NewMenu("", commit, init, identity, manageRemotes, pull, push, release)
+	return fyne.NewMenu("", commit, init, identity, manageRemotes, pull, push, release,
+		fyne.NewMenuItemSeparator(),
+		depRepo, depAll, scanAllLocal, scanThisLocal)
 }
 
 // initRepoHere is the menu entry point for creating a new repository at
@@ -1677,6 +1752,214 @@ func (v *explorerView) runDepScan() {
 	runDepScanForRepo(v.app, v.win, v.currentPath)
 }
 
+// runDepScanAll sweeps every configured repo in one pass, shows the aggregated
+// report, and updates the persistent header badge with the result.
+func (v *explorerView) runDepScanAll() {
+	runDepScanAll(v.app, v.win, func(res depScanAllResult) {
+		v.lastDepScan = &res
+		v.setDepScanBadge(res.count, res.when)
+		v.app.Preferences().SetInt(prefDepScanLastCount, res.count)
+		v.app.Preferences().SetInt(prefDepScanLastTime, int(res.when.Unix()))
+	})
+}
+
+// showLastDepScanReport re-opens the most recent "Scan All Repos" report. The
+// report itself is only held for the current session, so after a relaunch
+// (badge seeded from preferences) this prompts a fresh sweep instead.
+func (v *explorerView) showLastDepScanReport() {
+	if v.lastDepScan == nil {
+		dialog.ShowConfirm("Scan All Repos",
+			"No scan report from this session yet.\n\nRun a sweep now?",
+			func(yes bool) {
+				if yes {
+					v.runDepScanAll()
+				}
+			}, v.win)
+		return
+	}
+	r := v.lastDepScan
+	showDepScanReportDialog(v.app, v.win, r.repoLabel, r.scriptPath, r.elapsed, r.report, nil)
+}
+
+// seedDepScanBadge paints the header badge from the last sweep persisted in
+// preferences, so it survives across launches. No-op when no sweep has ever
+// run (empty badge).
+func (v *explorerView) seedDepScanBadge() {
+	when := v.app.Preferences().Int(prefDepScanLastTime) // 0 == never scanned
+	if when == 0 {
+		return
+	}
+	v.setDepScanBadge(v.app.Preferences().Int(prefDepScanLastCount), time.Unix(int64(when), 0))
+}
+
+// setDepScanBadge renders the cross-repo dependency-health badge in the header.
+// Unlike the sync/release labels it's a global aggregate, so it does not change
+// on repo switch — only after a "Scan All Repos" sweep.
+func (v *explorerView) setDepScanBadge(count int, when time.Time) {
+	if v.depScanLabel == nil {
+		return
+	}
+	if count <= 0 {
+		v.depScanLabel.SetText("  •  ✓ deps clean")
+	} else {
+		v.depScanLabel.SetText(fmt.Sprintf("  •  ⚠ %d vuln(s)", count))
+	}
+}
+
+// --- GitHub Dependabot ---------------------------------------------------------
+
+// checkDependabotAlerts fetches open Dependabot alerts for the current repo and
+// shows them in the per-repo cards dialog. github.com only this release; a repo
+// whose GitHub remote is on a different host gets a friendly not-yet message.
+func (v *explorerView) checkDependabotAlerts() {
+	if v.repo == nil {
+		dialog.ShowInformation("Dependabot", "Open a git repository first.", v.win)
+		return
+	}
+	host, owner, name, ok := findGitHubReleaseTarget(v.repo)
+	if !ok {
+		// findGitHubReleaseTarget only returns a GHES host when gh is
+		// authenticated there, so a GHES repo with an expired token lands
+		// here. Surface the re-auth hint if a GHES remote is present.
+		if h := firstNonGitHubHost(v.repo); h != "" {
+			dialog.ShowInformation("Dependabot",
+				fmt.Sprintf("Not authenticated to %s. Run `%s` in a terminal, then retry.", h, authLoginHint(h)),
+				v.win)
+			return
+		}
+		dialog.ShowInformation("Dependabot", "This repo has no recognised GitHub remote.", v.win)
+		return
+	}
+
+	repoRoot := v.repoRoot
+	prog := dialog.NewCustom("Dependabot", "Hide", container.NewVBox(
+		widget.NewLabel(fmt.Sprintf("Fetching Dependabot alerts for %s/%s…", owner, name)),
+		widget.NewProgressBarInfinite(),
+	), v.win)
+	prog.Show()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), depAlertCallTimeout)
+		defer cancel()
+		alerts, err := fetchDependabotAlerts(ctx, host, owner, name)
+		fyne.Do(func() {
+			prog.Hide()
+			if err != nil {
+				dialog.ShowError(err, v.win)
+				return
+			}
+			showDependabotAlertsDialog(v.win, owner, name, repoRoot, alerts)
+		})
+	}()
+}
+
+// runDependabotScanAll sweeps every configured repo for open Dependabot alerts,
+// shows the aggregate view, and updates the persistent header badge.
+func (v *explorerView) runDependabotScanAll() {
+	runDependabotScanAll(v.app, v.win, func(s depAlertSummary) {
+		v.setDepAlertBadge(s.totalAlerts, s.when)
+		v.app.Preferences().SetInt(prefDepAlertLastCount, s.totalAlerts)
+		v.app.Preferences().SetInt(prefDepAlertLastTime, int(s.when.Unix()))
+	})
+}
+
+func (v *explorerView) seedDepAlertBadge() {
+	when := v.app.Preferences().Int(prefDepAlertLastTime) // 0 == never scanned
+	if when == 0 {
+		return
+	}
+	v.setDepAlertBadge(v.app.Preferences().Int(prefDepAlertLastCount), time.Unix(int64(when), 0))
+}
+
+// setDepAlertBadge renders the GitHub-Dependabot badge in the header. Distinct
+// from the local dep-scan badge so the two sources read independently.
+func (v *explorerView) setDepAlertBadge(count int, when time.Time) {
+	if v.depAlertLabel == nil {
+		return
+	}
+	if count <= 0 {
+		v.depAlertLabel.SetText("  •  🛡 alerts clear")
+	} else {
+		v.depAlertLabel.SetText(fmt.Sprintf("  •  🛡 %d alert(s)", count))
+	}
+}
+
+// dailyScanScheduler runs the once-daily background Dependabot sweep. It owns a
+// single goroutine; closing done stops it (idempotent, mirroring repoWatcher).
+type dailyScanScheduler struct {
+	done chan struct{}
+}
+
+const dailyScanCheckInterval = 5 * time.Minute
+
+// startDailyScanScheduler (re)starts the background sweep loop. Safe to call
+// repeatedly — it stops any existing loop first, so a prefs change just swaps
+// schedules. A short settle delay keeps the sweep off the launch critical path;
+// thereafter it re-checks every few minutes (so a machine waking after the
+// configured slot still runs the day's sweep — see dueForDailyScan).
+func (v *explorerView) startDailyScanScheduler() {
+	v.stopDailyScanScheduler()
+	s := &dailyScanScheduler{done: make(chan struct{})}
+	v.dailyScan = s
+
+	go func() {
+		settle := time.NewTimer(20 * time.Second)
+		defer settle.Stop()
+		ticker := time.NewTicker(dailyScanCheckInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.done:
+				return
+			case <-settle.C:
+				v.maybeRunDailyScan()
+			case <-ticker.C:
+				v.maybeRunDailyScan()
+			}
+		}
+	}()
+}
+
+func (v *explorerView) stopDailyScanScheduler() {
+	s := v.dailyScan
+	if s == nil {
+		return
+	}
+	v.dailyScan = nil
+	select {
+	case <-s.done:
+	default:
+		close(s.done)
+	}
+}
+
+// maybeRunDailyScan runs the headless Dependabot sweep when one is due, then
+// updates + persists the badge on the UI thread. Runs on the scheduler
+// goroutine; the network/gh work stays off the UI thread.
+func (v *explorerView) maybeRunDailyScan() {
+	p := v.app.Preferences()
+	if !dueForDailyScan(
+		p.Bool(prefDailyDepAlertEnabled),
+		p.StringWithFallback(prefDailyDepAlertTime, "09:00"),
+		p.String(prefDailyDepAlertLastRun),
+		time.Now(),
+	) {
+		return
+	}
+	total, ok := sweepDependabotAlerts(v.app)
+	now := time.Now()
+	// Record the run date regardless of ok, so a no-op day (no targets / all
+	// errored) doesn't retry every 5 minutes; the badge only updates on ok.
+	p.SetString(prefDailyDepAlertLastRun, now.Format("2006-01-02"))
+	if !ok {
+		return
+	}
+	fyne.Do(func() {
+		v.setDepAlertBadge(total, now)
+		p.SetInt(prefDepAlertLastCount, total)
+		p.SetInt(prefDepAlertLastTime, int(now.Unix()))
+	})
+}
+
 func (v *explorerView) showStatusLegend() {
 	rows := [][2]string{
 		{"tracked", "Tracked by git, no changes since the last commit."},
@@ -1734,6 +2017,11 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		trayRecentFolders,
 		fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, nil) }),
 		fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() }),
+		fyne.NewMenuItem("Scan All Repos…", func() { v.runDepScanAll() }),
+		fyne.NewMenuItem("Configure Repos to Scan…", func() { showDepScanConfig(v.app, v.win) }),
+		fyne.NewMenuItem("Dependabot: Check This Repo…", func() { v.checkDependabotAlerts() }),
+		fyne.NewMenuItem("Dependabot: Scan All Repos…", func() { v.runDependabotScanAll() }),
+		fyne.NewMenuItem("Dependabot: Configure Owners…", func() { showDepAlertConfig(v.app, v.win) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Branches…", func() { v.showBranches() }),
 		fyne.NewMenuItem("Contributors…", func() { v.showContributors() }),

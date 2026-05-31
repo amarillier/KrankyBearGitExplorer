@@ -71,6 +71,38 @@ Optional: a 'dep-scan' skill or a repo-vendored 'dep-scan.sh' /
 'dep-scan.ps1' for the Scan Dependencies button (see
 README_DEPSCAN.md in the repo).
 
+DEPENDENCY SCANNING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• File → Scan Dependencies… (or the Scan toolbar button) scans the
+  current folder for vulnerable dependencies.
+• File → Scan All Repos… sweeps every git repo discovered under your
+  configured source folders in one pass, with one aggregated report.
+  Use Configure Repos to Scan… to set the source folders and to skip
+  individual repos. The header shows a dependency-health badge from
+  the last sweep; View Last Scan Report… reopens it.
+
+• The toolbar "Scan ▾" button gathers every dependency-scan action
+  in one menu: local dep-scan or GitHub Dependabot, for this repo or
+  all repos, plus their configuration. The same actions are mirrored
+  in the Repo ▾ dropdown.
+
+• Dependabot: Check This Repo… queries GitHub's Dependabot alerts for
+  the current repo (open alerts, with Open advisory and, for Go
+  modules with a published fix, Apply fix). Dependabot: Scan All
+  Repos… checks every repo under the owners you configure (Dependabot:
+  Configure Owners…) plus your local clones, and shows a per-repo
+  summary. Repos that can't be scanned are grouped by reason — third-
+  party clones you don't own, Dependabot-not-enabled (with how-to-fix
+  advice), 404, or auth — instead of a vague error. A 🛡 header badge
+  reflects the last sweep.
+  Hosts: github.com, plus GitHub Enterprise Server (e.g. internal
+  hosts) for repos you've cloned locally — run
+  'gh auth login --hostname <host>' to enable that host. GHES org-wide
+  enumeration is planned.
+  Requires the gh CLI installed and authenticated (gh auth login).
+  Local dep-scan = offline/uncommitted code; Dependabot = GitHub's
+  authoritative view of your pushed state.
+
 OPENING A FOLDER
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • File → Open Folder… (Cmd/Ctrl+O), or the Open Folder… button in the toolbar.

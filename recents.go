@@ -21,7 +21,25 @@ const (
 	prefWindowWidth        = "windowWidth"
 	prefWindowHeight       = "windowHeight"
 	prefSplitOffset        = "splitOffset" // main HSplit ratio (0.0–1.0), saved on quit
-	maxRecentFiles         = 10
+
+	// Dep-scan "Scan All Repos" config + last-sweep badge state.
+	prefDepScanRoots     = "depScanSourceRoots"   // JSON []string of source-root folders to discover repos under
+	prefDepScanOptOut    = "depScanOptOutRepos"   // JSON []string of discovered repo paths to skip
+	prefDepScanLastCount = "depScanLastVulnCount" // int: total findings from the last sweep (badge)
+	prefDepScanLastTime  = "depScanLastRunUnix"   // int64: Unix seconds of the last sweep (badge tooltip)
+
+	// GitHub Dependabot "scan all" config + last-sweep badge state.
+	prefDepAlertOwners          = "depAlertOwners"          // JSON []string of GitHub owners/orgs to enumerate
+	prefDepAlertIncludeArchived = "depAlertIncludeArchived" // bool: include archived repos in enumeration
+	prefDepAlertLastCount       = "depAlertLastCount"       // int: total open alerts from the last sweep (badge)
+	prefDepAlertLastTime        = "depAlertLastRunUnix"     // int64: Unix seconds of the last sweep
+
+	// Daily background Dependabot sweep.
+	prefDailyDepAlertEnabled = "dailyDepAlertEnabled" // bool
+	prefDailyDepAlertTime    = "dailyDepAlertTime"    // string "HH:MM" (24-hour), default "09:00"
+	prefDailyDepAlertLastRun = "dailyDepAlertLastRun" // string "2006-01-02", once-per-day guard
+
+	maxRecentFiles = 10
 
 	mainWindowDefaultWidth  = float32(825)
 	mainWindowDefaultHeight = float32(600)
@@ -146,6 +164,21 @@ func removeRecentFolder(a fyne.App, path string) {
 func clearRecentFolders(a fyne.App) {
 	saveRecentList(a, prefRecentFolders, nil)
 }
+
+// --- dep-scan "Scan All Repos" config -----------------------------------------
+//
+// Reuses the generic JSON list load/save helpers above. Roots are the folders
+// we walk for git repos; the opt-out list is the set of discovered repos the
+// user has chosen to skip in the sweep.
+
+func loadDepScanRoots(a fyne.App) []string  { return loadRecentList(a, prefDepScanRoots) }
+func saveDepScanRoots(a fyne.App, p []string) { saveRecentList(a, prefDepScanRoots, p) }
+
+func loadDepScanOptOut(a fyne.App) []string   { return loadRecentList(a, prefDepScanOptOut) }
+func saveDepScanOptOut(a fyne.App, p []string) { saveRecentList(a, prefDepScanOptOut, p) }
+
+func loadDepAlertOwners(a fyne.App) []string   { return loadRecentList(a, prefDepAlertOwners) }
+func saveDepAlertOwners(a fyne.App, p []string) { saveRecentList(a, prefDepAlertOwners, p) }
 
 func recentMenuLabel(path string) string {
 	if path == "" {

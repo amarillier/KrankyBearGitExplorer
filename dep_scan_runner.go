@@ -117,11 +117,17 @@ func showDepScanResult(a fyne.App, parent fyne.Window, repoRoot, scriptPath stri
 }
 
 func showDepScanReportDialog(a fyne.App, parent fyne.Window, repoRoot, scriptPath string, elapsed time.Duration, report string, runErr error) {
-	// Render the markdown report via widget.RichText so headings, lists,
-	// and inline code styling all come through.
-	rt := widget.NewRichTextFromMarkdown(report)
-	rt.Wrapping = fyne.TextWrapWord
-	scroll := container.NewVScroll(rt)
+	// Render the report as read-only monospace text in a MultiLineEntry —
+	// the same widget the git log -p viewer uses. RichText markdown looked
+	// nicer but its first layout for a large multi-repo report could leave
+	// the surrounding VScroll with a stale content height, so the scrollbar
+	// never armed until the dialog was reopened. A MultiLineEntry computes
+	// its own size up front and scrolls reliably regardless of report size.
+	output := widget.NewMultiLineEntry()
+	output.TextStyle = fyne.TextStyle{Monospace: true}
+	output.Wrapping = fyne.TextWrapWord
+	output.SetText(report)
+	scroll := container.NewVScroll(output)
 	scroll.SetMinSize(fyne.NewSize(820, 480))
 
 	headerLines := []string{

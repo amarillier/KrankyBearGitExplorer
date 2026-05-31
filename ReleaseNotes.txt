@@ -5,11 +5,96 @@ Future ideas:
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
 - git log: --oneline, --stat, --decorate, after rebase - committer vs. author, -p -1 <file>, parent SHAs for merges?, trailers highlighted?
 
-Probably:
-- Any way to detect release is up to date and indicate no need for another release?
-- Individual or iterate all repos Dependabot scan for vulnerabilities
+- Probably: Add to repo scan to look through user defined local repo e.g. ~Allan/Source/go for all directories that have been git init'ed, contain a repo, report any that have not been committed / up to date. Maybe works in progress, report only for awareness
 
 
+Version 0.9.5 - May 30, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The single-folder dependency scan grows up: now you can
+sweep every repo you work on in one pass, instead of
+opening each project to scan it. dep-scan finds the git
+repos under the source folders you point it at, scans
+them all together, and a header badge keeps the last
+result in view so a newly-disclosed CVE in any repo gets
+your attention without trawling GitHub emails.
+
+This release ships the on-demand sweep; a scheduled
+(daily) sweep is the planned follow-up. Notifications
+stay passive by design — the badge updates, nothing
+pops up over your work.
+
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔
+- New "Scan All Repos…" (File menu + system tray) runs
+  one dep-scan pass across every git repo discovered
+  under your configured source folders and shows a
+  single aggregated report.
+
+- "Configure Repos to Scan…" lets you add/remove the
+  source folders to search and tick individual repos to
+  skip. Folders are seeded from your recent-folders list
+  the first time you open it, so the discovered list
+  isn't empty out of the box.
+
+- A dependency-health badge in the repo header reflects
+  the most recent sweep — "✓ deps clean" or "⚠ N
+  vuln(s)". It's a cross-repo aggregate, so it stays put
+  as you switch repos, and it persists across launches.
+  "View Last Scan Report…" reopens this session's
+  report.
+
+ℹ NOTES
+▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Reuses the same local dep-scan engine (osv-scanner +
+  govulncheck) as the existing single-folder scan — no
+  GitHub token or network access required. Needs the
+  dep-scan skill installed (see README_DEPSCAN.md).
+
+✨ NEW — GitHub Dependabot scanning
+▔▔▔▔▔▔▔▔▔▔▔▔▔
+Alongside the local scan, you can now pull GitHub's own
+Dependabot alerts — the authoritative, continuously
+updated view of vulnerabilities in your pushed code.
+
+- "Dependabot: Check This Repo…" (File menu + tray) shows
+  open Dependabot alerts for the current repo, with Open
+  advisory and — for Go modules with a published fix —
+  Apply fix (go get + go mod tidy).
+
+- "Dependabot: Scan All Repos…" checks every repo under
+  the owners/orgs you configure ("Dependabot: Configure
+  Owners…", seeded from your gh login) unioned with your
+  local clones, and shows a per-repo summary grouped by
+  severity. Repos that can't be scanned are grouped by
+  reason — third-party clones you don't own, Dependabot-
+  not-enabled (with how-to-fix advice), 404, or auth —
+  instead of a vague "exit status 1". Third-party clones
+  are skipped without an API call, so the sweep is faster.
+
+- A 🛡 header badge reflects the last all-repos sweep,
+  separate from the local dep-scan badge, and persists
+  across launches.
+
+- The toolbar "Scan ▾" button now gathers every scan
+  action (local or Dependabot, this repo or all repos,
+  plus config) in one menu; the same items are mirrored
+  in Repo ▾.
+
+- GitHub Enterprise Server: repos you've cloned locally
+  from an internal host are now included — run
+  `gh auth login --hostname <host>` to enable that host.
+  (GHES org-wide enumeration remains a planned follow-up.)
+
+- Daily background sweep: Preferences → Automatic
+  scanning → "Daily background Dependabot scan" runs the
+  all-repos Dependabot check once a day at a time you set
+  and refreshes the 🛡 badge — silently, no pop-ups. If
+  the machine is asleep at that time it runs at the next
+  opportunity after waking (still at most once a day).
+  The local dep-scan stays on-demand.
+
+- Uses the gh CLI for auth (no token stored by the app) —
+  install gh and run `gh auth login`.
 
 Version 0.9.4 - May 29, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -72,7 +157,7 @@ improvement so Publish is always one click away.
 The v0.9.0/0.9.2 dialog pre-filled the Tag and Title with the
 explorer tool's own version (e.g. v0.9.2) regardless of which
 repo was open — so releasing a different project like
-TaniumQuest required manually overwriting both fields and the
+TQuest required manually overwriting both fields and the
 notes section never matched. The dialog now reads the target
 repo's own version and pre-fills from that.
 
@@ -135,7 +220,7 @@ routes the release there.
       release URL uses the actual host instead of always saying
       github.com.
     • Auth-failure errors now include the exact command to run,
-      e.g. `gh auth login --hostname git.corp.tanium.com`, so the
+      e.g. `gh auth login --hostname git.corp.MYORG.com`, so the
       fix is copy-pasteable.
 
 🛠 ONE-TIME SETUP FOR GHES (per machine, per host)
