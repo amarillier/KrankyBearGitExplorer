@@ -252,3 +252,7 @@ Allan Marillier
 
 - Built with [Fyne](https://fyne.io/).
 - Built on top of [KrankyBearDiff](https://github.com/amarillier/KrankyBearDiff), whose two-pane diff engine survives here as the Compare Two Files… view.
+
+## Screenshots
+
+- Coming soon!
