@@ -81,6 +81,12 @@ DEPENDENCY SCANNING
   individual repos. The header shows a dependency-health badge from
   the last sweep; View Last Scan Report… reopens it.
 
+• File → Audit Local Repos… sweeps the same configured source folders
+  and reports, read-only, which repos need attention: local-only (no
+  remote), unpushed commits (ahead of the remote), uncommitted work,
+  or initialized-but-empty. Clean, in-sync repos are omitted. Handy for
+  spotting work you've committed locally but never pushed anywhere.
+
 • The toolbar "Scan ▾" button gathers every dependency-scan action
   in one menu: local dep-scan or GitHub Dependabot, for this repo or
   all repos, plus their configuration. The same actions are mirrored
@@ -100,6 +106,9 @@ DEPENDENCY SCANNING
   'gh auth login --hostname <host>' to enable that host. GHES org-wide
   enumeration is planned.
   Requires the gh CLI installed and authenticated (gh auth login).
+  Tip: if an Enterprise scan fails after your VPN/session timed out,
+  you usually don't need a full re-login — just refresh the token with
+  'gh auth refresh -h <host>'.
   Local dep-scan = offline/uncommitted code; Dependabot = GitHub's
   authoritative view of your pushed state.
 

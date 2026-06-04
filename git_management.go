@@ -1534,13 +1534,44 @@ func runForcePush(repoRoot, remote, branch string) (output string, err error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// pushNeedsForce reports whether a failed push's output indicates a
-// non-fast-forward rejection (i.e. the local branch is behind or has
-// diverged from the remote). Detected via the canonical
-// "(non-fast-forward)" substring git prints alongside the [rejected]
-// marker.
-func pushNeedsForce(output string) bool {
-	return strings.Contains(output, "non-fast-forward")
+// pushRejectedBehind reports whether a failed push's output indicates the
+// push was rejected because the local branch is behind or has diverged
+// from the remote — the rejection the inline rescue row exists to handle.
+//
+// Git prints one of two distinct markers depending on the cause, and we
+// must match BOTH:
+//   - "(fetch first)"     — the remote has commits you don't have locally
+//     (someone else pushed). This is the primary "pull first" case, and
+//     it was previously MISSED: matching only "non-fast-forward" meant the
+//     rescue row never surfaced for the exact scenario it targets.
+//   - "(non-fast-forward)" — your branch tip can't fast-forward onto the
+//     remote (typically after amending/rebasing already-pushed commits).
+//     This is the force-with-lease case.
+//
+// Both warrant the same rescue row; the row offers pull-rebase-then-retry
+// and force-with-lease side by side and lets the user pick, since the tool
+// can't tell an innocent someone-else-pushed from a deliberate history
+// rewrite with certainty.
+func pushRejectedBehind(output string) bool {
+	return strings.Contains(output, "non-fast-forward") ||
+		strings.Contains(output, "fetch first")
+}
+
+// pullHadConflict reports whether a pull's output indicates the working
+// tree was left with unresolved conflicts. A rebase/merge conflict makes
+// git pull exit non-zero (so the caller's err check already catches it),
+// but this also covers the subtler autostash-pop case that
+// `rebase.autoStash true` can produce: the rebase itself succeeds, then
+// reapplying the stashed dirty tree conflicts — which can surface in the
+// output without an obvious non-zero exit. In every case a conflicted
+// tree means a chained push must NOT be retried (you'd push a
+// half-integrated or conflict-marked state), so this is checked on the
+// pull-success path as a belt-and-suspenders guard before retrying.
+func pullHadConflict(output string) bool {
+	return strings.Contains(output, "CONFLICT") ||
+		strings.Contains(output, "could not apply") ||
+		strings.Contains(output, "Applying autostash resulted in conflicts") ||
+		strings.Contains(output, "needs merge")
 }
 
 // showPushDialog opens the Push composer. The dialog stays open during
@@ -1559,12 +1590,14 @@ func pushNeedsForce(output string) bool {
 // hatch the Init success dialog could later use. Without it the user
 // has to dismiss and navigate to Repo ▾ → Commit… manually.
 //
-// onPullNeeded, when non-nil, gets a "Pull first" button in the
-// rescue row that surfaces after a non-fast-forward push rejection.
-// Pull-first is the safer recovery when the rejection is caused by
-// someone else having pushed — vs. force-with-lease, which is the
-// right move for the amend-already-pushed case.
-func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, onPushed func(), onLocalScan func(), onCommitNeeded func(), onPullNeeded func()) {
+// The rescue row that surfaces after a non-fast-forward push rejection
+// leads with a "Pull first (rebase) + retry" button: it integrates
+// upstream with a rebase and, if the tree comes back clean, re-attempts
+// the push — all in-dialog, one click. Pull-first is the safer recovery
+// when the rejection is caused by someone else having pushed; the
+// force-with-lease button beside it is the right move for the
+// amend-already-pushed case.
+func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, onPushed func(), onLocalScan func(), onCommitNeeded func()) {
 	if repo == nil || repoRoot == "" {
 		return
 	}
@@ -1664,27 +1697,40 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 
 	// Inline rescue row for non-fast-forward push rejections. Two common
 	// causes: (a) someone else pushed since your last fetch (correct fix:
-	// pull first), (b) you amended a commit that was already pushed
-	// (correct fix: force-with-lease). The row offers force-with-lease
-	// directly; a Pull-first button can join here once Stage 4 lands.
+	// pull --rebase, then push), (b) you amended a commit that was already
+	// pushed (correct fix: force-with-lease). The row offers both: a
+	// one-click pull-rebase-then-retry, and force-with-lease.
 	rescueHeadline := widget.NewLabel("")
 	rescueHeadline.Wrapping = fyne.TextWrapWord
 	rescueHeadline.TextStyle = fyne.TextStyle{Bold: true}
 	// Pull-first is the safer rescue (covers the someone-else-pushed
 	// case); it leads in the rescue row. Force-with-lease is the
 	// amend-already-pushed rescue and sits second with DangerImportance
-	// styling so it reads as the heavier action.
-	pullFirstBtn := widget.NewButtonWithIcon("Pull first", theme.DownloadIcon(), nil)
+	// styling so it reads as the heavier action. OnTapped is wired below,
+	// once attemptPush exists, so the pull can chain straight into a push
+	// retry in one click.
+	pullFirstBtn := widget.NewButtonWithIcon("Pull first (rebase) + retry", theme.DownloadIcon(), nil)
 	pullFirstBtn.Importance = widget.HighImportance
-	if onPullNeeded == nil {
-		pullFirstBtn.Disable()
-	} else {
-		pullFirstBtn.OnTapped = func() { onPullNeeded() }
-	}
 	forcePushBtn := widget.NewButtonWithIcon("Force push (--force-with-lease)", theme.WarningIcon(), nil)
 	forcePushBtn.Importance = widget.DangerImportance
 	rescueRow := container.NewVBox(rescueHeadline, container.NewHBox(pullFirstBtn, forcePushBtn))
 	rescueRow.Hide()
+
+	// Proactive sync row. When the local cache already knows the branch
+	// has diverged from its upstream (a prior fetch, or a pull on another
+	// machine), a plain Push is guaranteed to be rejected. Rather than
+	// make the user discover that by failing, surface the same
+	// pull-rebase-then-push chain up front as the primary action. The
+	// detection (readLocalSync, below) is cached / no-network, and only
+	// fires when we already KNOW we've diverged — so a stale cache simply
+	// falls back to the reactive rescue row above, never a false alarm.
+	syncHint := widget.NewLabel("")
+	syncHint.Wrapping = fyne.TextWrapWord
+	syncHint.TextStyle = fyne.TextStyle{Bold: true}
+	syncBtn := widget.NewButtonWithIcon("Sync now (pull --rebase + push)", theme.ViewRefreshIcon(), nil)
+	syncBtn.Importance = widget.HighImportance
+	syncRow := container.NewVBox(syncHint, container.NewHBox(syncBtn))
+	syncRow.Hide()
 
 	pushBtn := widget.NewButtonWithIcon("Push", theme.UploadIcon(), nil)
 	pushBtn.Importance = widget.HighImportance
@@ -1761,7 +1807,13 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 		}
 	}
 
-	pushBtn.OnTapped = func() {
+	// attemptPush runs the push for the currently-selected remote and
+	// renders the outcome. Extracted into a closure (rather than living
+	// inline in pushBtn.OnTapped) so the pull-first rescue can re-invoke
+	// the exact same path after integrating upstream — chaining
+	// pull-then-push into one click instead of leaving the user to reopen
+	// the dialog and press Push again.
+	attemptPush := func() {
 		pushBtn.SetText("Push")
 		pushBtn.Importance = widget.HighImportance
 		pushBtn.Refresh()
@@ -1792,8 +1844,8 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 					// git's own "use git pull" hint would handle
 					// incorrectly (a merge would re-create the
 					// pre-amend commit).
-					if pushNeedsForce(out) {
-						rescueHeadline.SetText("⚠ Push rejected as non-fast-forward — your local branch has diverged from the remote. " +
+					if pushRejectedBehind(out) {
+						rescueHeadline.SetText("⚠ Push rejected — your local branch is behind or has diverged from the remote. " +
 							"This usually means either (a) someone else pushed since your last fetch (correct fix: pull first), or " +
 							"(b) you amended or rebased a commit that was already pushed (correct fix: force-with-lease).")
 						forcePushBtn.OnTapped = func() {
@@ -1831,6 +1883,76 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 			})
 		}()
 	}
+	pushBtn.OnTapped = attemptPush
+
+	// syncPullThenPush integrates upstream with a rebase, then — only if
+	// the tree came back clean — pushes, all in this dialog. Rebase (not
+	// merge) is the correct fix for the someone-else-pushed case: it
+	// replays your local commits on top of the remote tip, avoiding a
+	// merge bubble. If the pull fails or leaves conflicts, we surface
+	// git's output verbatim and stop — never push a half-integrated tree —
+	// leaving force-with-lease available in the rescue row for the
+	// amend-already-pushed case. (Conflict resolution stays in the user's
+	// editor/CLI; there's no in-app resolver.)
+	//
+	// Both the reactive "Pull first" rescue button (after a rejection) and
+	// the proactive "Sync now" button (when we open already diverged) run
+	// this exact path, so the two affordances behave identically.
+	syncPullThenPush := func() {
+		pullFrom := upstream
+		if pullFrom == "" {
+			pullFrom = "upstream"
+		}
+		statusLabel.SetText(fmt.Sprintf("Pulling (rebase) from %s …", pullFrom))
+		rescueRow.Hide()
+		syncRow.Hide()
+		pushBtn.Disable()
+		remoteSelect.Disable()
+		setUpstreamCheck.Disable()
+		go func() {
+			out, err := runPull(repoRoot, true)
+			fyne.Do(func() {
+				pushBtn.Enable()
+				remoteSelect.Enable()
+				setUpstreamCheck.Enable()
+				if err != nil {
+					// Pull itself failed — most often rebase conflicts,
+					// but also no-upstream / fetch errors. Show verbatim
+					// and offer the rescue row (force-with-lease may
+					// still be the right call for an amend).
+					statusLabel.SetText("✗ Pull failed — resolve before pushing:\n" + out)
+					rescueRow.Show()
+					return
+				}
+				if pullHadConflict(out) {
+					// Exit looked clean but the tree is conflicted — the
+					// autostash-pop case. Do not retry the push.
+					statusLabel.SetText("✗ Pull left conflicts in the working tree — resolve in your editor/CLI, then push:\n" + out)
+					rescueRow.Show()
+					return
+				}
+				statusLabel.SetText("✓ Pulled (rebase). Pushing …\n\n" + out)
+				attemptPush()
+			})
+		}()
+	}
+	pullFirstBtn.OnTapped = syncPullThenPush
+	syncBtn.OnTapped = syncPullThenPush
+
+	// Proactive behind-detection. Cached/no-network, so it's cheap. Only
+	// steer to Sync when the branch has genuinely diverged (behind AND
+	// ahead): that's the case where a plain push is rejected yet there's
+	// local work to publish. Behind-only would just fast-forward with
+	// nothing to push; ahead-only pushes cleanly — neither needs steering.
+	if info := readLocalSync(repoRoot); info.HasUpstream && info.Behind > 0 && info.Ahead > 0 {
+		syncHint.SetText(fmt.Sprintf(
+			"↓%d ↑%d vs %s — your branch has diverged, so a plain push will be rejected. "+
+				"Sync rebases your %d local commit(s) onto the remote tip and publishes, in one step.",
+			info.Behind, info.Ahead, info.UpstreamRef, info.Ahead))
+		syncRow.Show()
+		// De-emphasise the plain Push so Sync reads as the primary action.
+		pushBtn.Importance = widget.MediumImportance
+	}
 
 	form := widget.NewForm(
 		widget.NewFormItem("Branch", branchLabel),
@@ -1841,6 +1963,7 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 	content := container.NewVBox(
 		form,
 		setUpstreamCheck,
+		syncRow,
 		container.NewHBox(pushBtn),
 		statusLabel,
 		vulnRow,

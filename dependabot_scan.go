@@ -511,7 +511,7 @@ func showDependabotAggregateDialog(a fyne.App, parent fyne.Window, results []dep
 	order := []bucketSpec{
 		{depErrDisabled, "Dependabot not enabled", "Enable in each repo's Settings → Code security → Dependabot alerts."},
 		{depErrNotFound, "Not found / no access (404)", "Repo may be private, renamed, or not visible to your gh account."},
-		{depErrAuth, "Authentication needed", "Run `gh auth login` (add `--hostname <host>` for Enterprise) then rescan."},
+		{depErrAuth, "Authentication needed", "Run `gh auth login` (add `--hostname <host>` for Enterprise) then rescan. If you were already logged in but a VPN/session timed out, `gh auth refresh -h <host>` is usually enough."},
 		{depErrThirdParty, "Third-party (no admin access)", "Locally-cloned repos owned by others — you can't read their Dependabot alerts. Paths shown so you can prune clones you no longer need."},
 		{depErrNotAuthorized, "Not authorized (403)", "You're not an admin on these repos."},
 		{depErrOther, "Other errors", ""},

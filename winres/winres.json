@@ -36,22 +36,22 @@
     "#1": {
       "0000": {
         "fixed": {
-          "file_version": "0.9.5",
-          "product_version": "0.9.5"
+          "file_version": "0.9.7",
+          "product_version": "0.9.7"
         },
         "info": {
           "0409": {
             "Comments": "",
             "CompanyName": "Allan Marillier",
             "FileDescription": "KrankyBearGitExplorer",
-            "FileVersion": "0.9.5",
+            "FileVersion": "0.9.7",
             "InternalName": "",
             "LegalCopyright": "Allan Marillier, 2025-",
             "LegalTrademarks": "",
             "OriginalFilename": "",
             "PrivateBuild": "",
             "ProductName": "KrankyBearGitExplorer",
-            "ProductVersion": "0.9.5",
+            "ProductVersion": "0.9.7",
             "SpecialBuild": ""
           }
         }

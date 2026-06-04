@@ -5,8 +5,83 @@ Future ideas:
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
 - git log: --oneline, --stat, --decorate, after rebase - committer vs. author, -p -1 <file>, parent SHAs for merges?, trailers highlighted?
 
-- Probably: Add to repo scan to look through user defined local repo e.g. ~Allan/Source/go for all directories that have been git init'ed, contain a repo, report any that have not been committed / up to date. Maybe works in progress, report only for awareness
+Version 0.9.7 - June 4, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When someone else (or another machine) has pushed to your
+branch, a plain push is rejected and the old fix was a
+multi-step dance: pull in one dialog, close it, re-open
+Push, push again. Push now handles the whole rebase-and-
+republish in a single click — and warns you before the
+rejection when it can.
 
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔
+- "Pull first (rebase) + retry" in the Push dialog's rescue
+  row now does it all in place: pull --rebase, then — only
+  if the working tree comes back clean — re-attempt the
+  original push. No more bouncing to a separate Pull dialog
+  and pushing again by hand.
+
+- Proactive "Sync now (pull --rebase + push)" button: when
+  Push opens and your branch has already diverged from its
+  upstream (behind AND ahead), it steers you to Sync up
+  front instead of letting the push fail first. Uses the
+  cached ahead/behind counts — no network call.
+
+🐞 FIXED
+▔▔▔▔▔▔▔▔▔▔▔
+- The push-rejection rescue row now also appears for the
+  "someone else pushed" case. Git reports that as
+  "(fetch first)", which the old detector missed — it only
+  matched "(non-fast-forward)" (the amend/rebase case) — so
+  the Pull-first rescue never surfaced for the exact
+  situation it was built for. Both are caught now.
+
+SAFETY
+▔▔▔▔▔▔▔▔▔▔▔
+- A rebase/merge conflict (or an autostash-pop conflict)
+  stops the chain before the push — a half-integrated tree
+  is never published. Git's output is shown verbatim and
+  you resolve in your editor/CLI, as before. Force-push
+  stays a separate, explicit --force-with-lease action
+  behind a confirmation.
+
+Version 0.9.6 - June 2, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A new read-only sweep answers a question that's easy to
+lose track of across a folder full of projects: which
+repos have I committed to locally but never pushed —
+or left with work in progress? "Audit Local Repos…"
+walks the same source folders as the dependency sweep
+and reports only the repos that need attention.
+
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔▔▔
+- "Audit Local Repos…" (File menu + system tray) sweeps
+  every git repo under your configured source folders and
+  reports, read-only, the ones needing attention, grouped
+  into four buckets:
+    • Local-only — committed but no remote configured.
+    • Unpushed — current branch is ahead of its remote,
+      or has no upstream set.
+    • Uncommitted — a dirty worktree (work in progress).
+    • Empty — initialized but never committed.
+  Clean, in-sync repos are omitted, with a "N of M clean"
+  summary, so the report stays signal. It's purely
+  informational — no push/commit buttons — a safe "what
+  have I left lying around?" overview.
+
+- Reuses the source folders and per-repo skip list you
+  already set under "Configure Repos to Scan…", so
+  there's nothing new to configure.
+
+ℹ NOTES
+▔▔▔▔▔▔▔▔▔▔▔▔▔
+- GitHub Enterprise: the "Authentication needed" advice
+  in the all-repos Dependabot report, the in-app Help,
+  and the README now note that `gh auth refresh -h
+  <host>` usually restores Enterprise access after a
+  VPN/session timeout, without a full `gh auth login`.
 
 Version 0.9.5 - May 30, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
