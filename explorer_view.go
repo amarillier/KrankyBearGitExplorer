@@ -1289,6 +1289,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	// no report yet, which keeps this correct without re-running buildMainMenu
 	// after every scan just to flip the disabled flag.
 	lastScanReport := fyne.NewMenuItem("View Last Scan Report…", func() { v.showLastDepScanReport() })
+	auditRepos := fyne.NewMenuItem("Audit Local Repos…", func() { runRepoAudit(v.app, v.win) })
 
 	depAlertRepo := fyne.NewMenuItem("Dependabot: Check This Repo…", func() { v.checkDependabotAlerts() })
 	depAlertRepo.Disabled = v.repo == nil
@@ -1332,6 +1333,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		scanAll,
 		scanAllCfg,
 		lastScanReport,
+		auditRepos,
 		depAlertRepo,
 		depAlertAll,
 		depAlertCfg,
@@ -1556,6 +1558,7 @@ func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
 	release.Disabled = v.repo == nil
 
 	// Security/scan section (separated), alphabetised within itself.
+	auditLocal := fyne.NewMenuItem("Audit Local Repos…", func() { runRepoAudit(v.app, v.win) })
 	depRepo := fyne.NewMenuItem("Dependabot: Check This Repo…", func() { v.checkDependabotAlerts() })
 	depRepo.Disabled = v.repo == nil
 	depAll := fyne.NewMenuItem("Dependabot: Scan All Repos…", func() { v.runDependabotScanAll() })
@@ -1565,7 +1568,7 @@ func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
 	// Alphabetised: Commit, Initialize, Local Repo Identity, Manage Remotes, Pull, Push, Release.
 	return fyne.NewMenu("", commit, init, identity, manageRemotes, pull, push, release,
 		fyne.NewMenuItemSeparator(),
-		depRepo, depAll, scanAllLocal, scanThisLocal)
+		auditLocal, depRepo, depAll, scanAllLocal, scanThisLocal)
 }
 
 // initRepoHere is the menu entry point for creating a new repository at
@@ -1637,8 +1640,8 @@ func (v *explorerView) commitChanges() {
 // the header's remote-sync indicator on success; onLocalScan fires the
 // existing dep-scan when the inline GitHub-vuln alert's "Re-run local
 // dep-scan" button is clicked; onCommitNeeded handles the unborn-HEAD
-// recovery; onPullNeeded handles the non-fast-forward "pull first"
-// rescue.
+// recovery. The non-fast-forward "pull first (rebase) + retry" rescue is
+// handled entirely inside the dialog now, so it needs no callback.
 func (v *explorerView) pushChanges() {
 	if !v.guardRepoLoaded() {
 		return
@@ -1647,7 +1650,6 @@ func (v *explorerView) pushChanges() {
 		func() { v.refreshRemoteSync() },
 		func() { runDepScanForRepo(v.app, v.win, v.repoRoot) },
 		func() { v.commitChanges() },
-		func() { v.pullChanges() },
 	)
 }
 
@@ -2019,6 +2021,7 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() }),
 		fyne.NewMenuItem("Scan All Repos…", func() { v.runDepScanAll() }),
 		fyne.NewMenuItem("Configure Repos to Scan…", func() { showDepScanConfig(v.app, v.win) }),
+		fyne.NewMenuItem("Audit Local Repos…", func() { runRepoAudit(v.app, v.win) }),
 		fyne.NewMenuItem("Dependabot: Check This Repo…", func() { v.checkDependabotAlerts() }),
 		fyne.NewMenuItem("Dependabot: Scan All Repos…", func() { v.runDependabotScanAll() }),
 		fyne.NewMenuItem("Dependabot: Configure Owners…", func() { showDepAlertConfig(v.app, v.win) }),

@@ -166,8 +166,19 @@ Every scan action lives under the **Scan ▾** toolbar dropdown (and is mirrored
 - *All repos* — checks every repo under the owners/orgs you set in **Configure Dependabot owners…** (seeded from your `gh` login) unioned with your local clones, and shows a per-repo summary grouped by severity (critical → low).
 - Repos that can't be scanned are grouped by reason with advice rather than a vague error: **Dependabot not enabled**, **Not found / no access (404)**, **Authentication needed**, and **Third-party (no admin access)** — locally-cloned repos owned by others, listed with their on-disk paths so you can prune clones you no longer need. Third-party clones are skipped without an API call, so the sweep stays fast.
 - A **🛡** header badge shows the last all-repos result (`🛡 alerts clear` / `🛡 N alert(s)`), separate from the local badge, persisted across launches.
-- **GitHub Enterprise Server**: repos you've cloned locally from an internal host (e.g. `git.corp.tanium.com`) are included automatically once you've run `gh auth login --hostname <host>`. (Org-wide enumeration of un-cloned GHES repos is a planned follow-up; github.com supports both local clones and owner/org enumeration.)
+- **GitHub Enterprise Server**: repos you've cloned locally from an internal host (e.g. `git.corp.<org>.com`) are included automatically once you've run `gh auth login --hostname <host>`. (Org-wide enumeration of un-cloned GHES repos is a planned follow-up; github.com supports both local clones and owner/org enumeration.) If an Enterprise scan starts failing after a VPN/session timeout, you usually don't need a full re-login — just refresh the existing token with `gh auth refresh -h <host>`.
 - **Daily background sweep** (opt-in) — Preferences → Automatic scanning runs the all-repos Dependabot check once a day at a time you choose and refreshes the 🛡 badge silently (no pop-ups). It catches up at the next opportunity if the machine was asleep at the scheduled time, and runs at most once per day.
+
+### Audit Local Repos…
+
+**Audit Local Repos…** (File menu + tray) is a read-only sweep over the same source folders as the dependency scan — answering "which repos have I committed to locally but never pushed, or left mid-change?" without opening each one. It groups the repos needing attention into four buckets:
+
+- **Local-only** — has commits but no remote configured.
+- **Unpushed** — current branch is ahead of its remote, or has no upstream set.
+- **Uncommitted** — a dirty worktree (modified or untracked files).
+- **Empty** — initialized but never committed.
+
+Clean, in-sync repos are omitted, with an "N of M clean" summary line, so the report stays signal. It's purely informational — no push/commit actions — and reuses the source folders + per-repo skip list from **Configure Repos to Scan…**, so there's nothing extra to set up.
 
 ### Compare Two Files… (legacy diff tool, preserved)
 
