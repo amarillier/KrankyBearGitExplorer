@@ -266,4 +266,16 @@ Allan Marillier
 
 ## Screenshots
 
-- Coming soon!
+![App Screenshot](screenshots/01GitExplorer.png)
+![App Screenshot](screenshots/02GitExplorer.png)
+![App Screenshot](screenshots/03GitExplorer.png)
+![App Screenshot](screenshots/04GitExplorer.png)
+![App Screenshot](screenshots/05GitExplorer.png)
+![App Screenshot](screenshots/06GitExplorer.png)
+![App Screenshot](screenshots/07GitExplorer.png)
+![App Screenshot](screenshots/08GitExplorer.png)
+![App Screenshot](screenshots/09GitExplorer.png)
+![App Screenshot](screenshots/10GitExplorer.png)
+![App Screenshot](screenshots/11GitExplorer.png)
+![App Screenshot](screenshots/12GitExplorer.png)
+![App Screenshot](screenshots/13GitExplorer.png)
