@@ -625,7 +625,25 @@ func (v *explorerView) browseFolder() {
 		v.loadFolder(uri.Path())
 		v.refreshMenu()
 	}, v.win)
+	d.Resize(folderDialogSize(v.win))
 	d.Show()
+}
+
+// folderDialogSize sizes the folder-picker relative to the main window so
+// browsing/selecting directories isn't cramped on larger displays, while
+// still guaranteeing a roomy minimum on small windows.
+func folderDialogSize(win fyne.Window) fyne.Size {
+	const minW, minH float32 = 900, 650
+	base := win.Canvas().Size()
+	w := base.Width * 0.85
+	h := base.Height * 0.85
+	if w < minW {
+		w = minW
+	}
+	if h < minH {
+		h = minH
+	}
+	return fyne.NewSize(w, h)
 }
 
 func (v *explorerView) dropTarget(_ fyne.Position, uris []fyne.URI) {
