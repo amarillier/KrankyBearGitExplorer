@@ -8,6 +8,7 @@ Future ideas:
 Version 0.9.8 - July 2, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Minor UX improvement - open folder modal is larger and dynamically resizes according to app window size
+Dependabot apply all updates (single repo only)
 
 Version 0.9.7 - June 4, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
