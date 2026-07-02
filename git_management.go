@@ -1264,6 +1264,31 @@ func runGoModTidy(repoRoot string) (output string, err error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// applyOneRepoFix runs go get pkg@fixVersion followed by go mod tidy in
+// repoRoot, synchronously — call it from a background goroutine. Shared
+// by the per-alert "Apply fix" button and "Apply all fixable" so both
+// paths report identical, correctly-wrapped errors.
+func applyOneRepoFix(repoRoot, pkg, fixVersion string) (output string, err error) {
+	getOut, getErr := applyGoFix(repoRoot, pkg, fixVersion)
+	if getErr != nil {
+		return getOut, fmt.Errorf("go get failed:\n%w\n\n%s", getErr, getOut)
+	}
+	tidyOut, tidyErr := runGoModTidy(repoRoot)
+	if tidyErr != nil {
+		return strings.TrimSpace(getOut + "\n" + tidyOut), fmt.Errorf("go get succeeded but go mod tidy failed:\n%w\n\n%s", tidyErr, tidyOut)
+	}
+	return strings.TrimSpace(getOut + "\n" + tidyOut), nil
+}
+
+// markApplied flips a fix button to its done state — used by both the
+// single-alert and apply-all flows so a fixed row looks the same either way.
+func markApplied(btn *widget.Button) {
+	btn.SetText("✓ Applied")
+	btn.Importance = widget.SuccessImportance
+	btn.Refresh()
+	btn.Disable()
+}
+
 // showDependabotAlertsDialog renders the fetched alerts as a scrollable
 // list of one-card-per-alert. Each card shows severity badge, package +
 // ecosystem + direct/transitive, the advisory summary, the vulnerable
@@ -1284,6 +1309,16 @@ func showDependabotAlertsDialog(parent fyne.Window, owner, repo, repoRoot string
 			parent)
 		return
 	}
+
+	// fixableRow pairs a per-alert "Apply fix" button with the pkg@version it
+	// applies, so "Apply all fixable" (added below once every card exists)
+	// can drive each row the same way a single click would.
+	type fixableRow struct {
+		btn        *widget.Button
+		pkg        string
+		fixVersion string
+	}
+	var fixableRows []*fixableRow
 
 	cards := container.NewVBox()
 	for _, a := range alerts {
@@ -1356,14 +1391,9 @@ func showDependabotAlertsDialog(parent fyne.Window, owner, repo, repoRoot string
 						origText := applyBtn.Text
 						applyBtn.SetText("Applying…")
 						go func() {
-							getOut, getErr := applyGoFix(repoRoot, alert.PackageName, fixVersion)
-							var tidyOut string
-							var tidyErr error
-							if getErr == nil {
-								tidyOut, tidyErr = runGoModTidy(repoRoot)
-							}
+							out, err := applyOneRepoFix(repoRoot, alert.PackageName, fixVersion)
 							fyne.Do(func() {
-								if getErr != nil {
+								if err != nil {
 									// Re-enable for retry on failure — the
 									// upgrade didn't land, so the user
 									// might want to try again after
@@ -1371,29 +1401,17 @@ func showDependabotAlertsDialog(parent fyne.Window, owner, repo, repoRoot string
 									// auth, conflicting require, etc.).
 									applyBtn.Enable()
 									applyBtn.SetText(origText)
-									dialog.ShowError(fmt.Errorf("go get failed:\n%w\n\n%s", getErr, getOut), parent)
-									return
-								}
-								if tidyErr != nil {
-									applyBtn.Enable()
-									applyBtn.SetText(origText)
-									dialog.ShowError(fmt.Errorf("go get succeeded but go mod tidy failed:\n%w\n\n%s", tidyErr, tidyOut), parent)
+									dialog.ShowError(err, parent)
 									return
 								}
 								// Success — flip the button to its done
 								// state so it's visually obvious which
 								// rows have been actioned when the user
 								// is working through several alerts.
-								// Stays disabled (idempotent anyway, but
-								// the visual signal is the point).
-								applyBtn.SetText("✓ Applied")
-								applyBtn.Importance = widget.SuccessImportance
-								applyBtn.Refresh()
-								applyBtn.Disable()
+								markApplied(applyBtn)
 								msg := fmt.Sprintf("Upgraded %s to %s.\n\ngo.mod and go.sum updated in this repo — commit those changes via Repo ▾ → Commit… to publish the fix.", alert.PackageName, fixVersion)
-								combined := strings.TrimSpace(getOut + "\n" + tidyOut)
-								if combined != "" {
-									msg += "\n\nOutput:\n" + combined
+								if out != "" {
+									msg += "\n\nOutput:\n" + out
 								}
 								dialog.ShowInformation("Fix applied", msg, parent)
 							})
@@ -1401,6 +1419,7 @@ func showDependabotAlertsDialog(parent fyne.Window, owner, repo, repoRoot string
 					}, parent)
 			}
 			buttons.Add(applyBtn)
+			fixableRows = append(fixableRows, &fixableRow{btn: applyBtn, pkg: alert.PackageName, fixVersion: fixVersion})
 		}
 
 		header := container.NewBorder(nil, nil, severityBadge, buttons, pkgLabel)
@@ -1410,7 +1429,84 @@ func showDependabotAlertsDialog(parent fyne.Window, owner, repo, repoRoot string
 
 	scroll := container.NewVScroll(cards)
 	scroll.SetMinSize(fyne.NewSize(760, 460))
-	d := dialog.NewCustom(title, "Close", scroll, parent)
+
+	// "Apply all fixable" only earns its place once there's more than one
+	// row to batch — with a single fixable alert its own button already
+	// does the job. Pinned above the scroll (not buried at the bottom of
+	// scrollable content) so it's visible regardless of how far the list
+	// is scrolled.
+	content := fyne.CanvasObject(scroll)
+	if len(fixableRows) >= 2 {
+		applyAllBtn := widget.NewButtonWithIcon(fmt.Sprintf("Apply all fixable (%d)", len(fixableRows)), theme.MoveUpIcon(), nil)
+		applyAllBtn.Importance = widget.HighImportance
+		applyAllBtn.OnTapped = func() {
+			lines := make([]string, len(fixableRows))
+			for i, r := range fixableRows {
+				lines[i] = r.pkg + "@" + r.fixVersion
+			}
+			msg := fmt.Sprintf("Run go get + go mod tidy in %s, one package at a time, for:\n\n    %s\n\nThis updates go.mod and go.sum for all %d package(s) above. You'll need to commit the changes to publish the fixes.\n\nContinue?",
+				repoRoot, strings.Join(lines, "\n    "), len(fixableRows))
+			dialog.ShowConfirm("Apply all fixable fixes?", msg, func(yes bool) {
+				if !yes {
+					return
+				}
+				applyAllBtn.Disable()
+				origText := applyAllBtn.Text
+				applyAllBtn.SetText("Applying…")
+				for _, r := range fixableRows {
+					r.btn.Disable()
+					r.btn.SetText("Queued…")
+				}
+				go func() {
+					var failures []string
+					applied := 0
+					// Sequential, not concurrent — every row rewrites the
+					// same go.mod/go.sum, so parallel go get calls would
+					// race on those files.
+					for _, r := range fixableRows {
+						fyne.Do(func() { r.btn.SetText("Applying…") })
+						out, err := applyOneRepoFix(repoRoot, r.pkg, r.fixVersion)
+						if err != nil {
+							failures = append(failures, fmt.Sprintf("%s@%s: %v", r.pkg, r.fixVersion, err))
+							fyne.Do(func() {
+								// Re-enable (rather than leaving it
+								// disabled from the "Queued…" state) so a
+								// row that failed mid-batch can still be
+								// retried individually.
+								r.btn.Enable()
+								r.btn.SetText("✗ Failed — retry")
+								r.btn.Importance = widget.DangerImportance
+								r.btn.Refresh()
+							})
+							continue
+						}
+						applied++
+						_ = out
+						fyne.Do(func() { markApplied(r.btn) })
+					}
+					fyne.Do(func() {
+						if len(failures) == len(fixableRows) {
+							applyAllBtn.Enable()
+							applyAllBtn.SetText(origText)
+						} else {
+							applyAllBtn.SetText("✓ Done")
+							applyAllBtn.Importance = widget.SuccessImportance
+							applyAllBtn.Refresh()
+						}
+						resultMsg := fmt.Sprintf("Applied %d of %d fixable package(s) in %s.\n\ngo.mod and go.sum updated — commit those changes via Repo ▾ → Commit… to publish the fixes.",
+							applied, len(fixableRows), repoRoot)
+						if len(failures) > 0 {
+							resultMsg += "\n\nFailed:\n" + strings.Join(failures, "\n")
+						}
+						dialog.ShowInformation("Apply all fixable — done", resultMsg, parent)
+					})
+				}()
+			}, parent)
+		}
+		content = container.NewBorder(container.NewVBox(applyAllBtn, widget.NewSeparator()), nil, nil, nil, scroll)
+	}
+
+	d := dialog.NewCustom(title, "Close", content, parent)
 	d.Resize(fyne.NewSize(840, 540))
 	d.Show()
 }
