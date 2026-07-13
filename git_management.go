@@ -1831,6 +1831,41 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 	pushBtn := widget.NewButtonWithIcon("Push", theme.UploadIcon(), nil)
 	pushBtn.Importance = widget.HighImportance
 
+	var pushing bool
+	var d *dialog.CustomDialog
+
+	// closeBtn mirrors the Release dialog's Close button: orange
+	// (WarningImportance) while a push/force-push/pull is running, green
+	// (SuccessImportance) right after one lands, default otherwise.
+	// Unlike Release's `gh release create` (which runs under a
+	// context.Context and can genuinely be killed), runPush/runForcePush/
+	// runPull use plain exec.Command with no context — so closing here
+	// can't stop the git process already in flight, only stop watching
+	// it. The confirm dialog says so rather than implying a real cancel.
+	closeBtn := widget.NewButton("Close", nil)
+	closeBtn.OnTapped = func() {
+		if !pushing {
+			if d != nil {
+				d.Hide()
+			}
+			return
+		}
+		dialog.ShowConfirm("Close while pushing?",
+			"A push (or pull) is still running in the background. Closing this dialog won't stop it — git already has it in flight — but you won't see whether it succeeded.\n\nClose anyway?",
+			func(confirmed bool) {
+				if !confirmed {
+					return
+				}
+				if d != nil {
+					d.Hide()
+				}
+			}, parent)
+	}
+	setCloseState := func(state widget.Importance) {
+		closeBtn.Importance = state
+		closeBtn.Refresh()
+	}
+
 	// applyPushSuccess centralises the post-success work: render git's
 	// output into the status area and parse it for the Dependabot alert
 	// headline so the clickable Open-alerts button surfaces regardless
@@ -1838,6 +1873,8 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 	// Previously this logic only ran on the regular-push path, so the
 	// vuln alert silently went missing after a force-push success.
 	applyPushSuccess := func(summary, out string) {
+		pushing = false
+		setCloseState(widget.SuccessImportance)
 		if out != "" {
 			summary += "\n\n" + out
 		}
@@ -1925,6 +1962,8 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 		pushBtn.Disable()
 		remoteSelect.Disable()
 		setUpstreamCheck.Disable()
+		pushing = true
+		setCloseState(widget.WarningImportance)
 		go func() {
 			out, err := runPush(repoRoot, remote, branch, setUpstream)
 			fyne.Do(func() {
@@ -1932,6 +1971,8 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 				remoteSelect.Enable()
 				setUpstreamCheck.Enable()
 				if err != nil {
+					pushing = false
+					setCloseState(widget.MediumImportance)
 					statusLabel.SetText("✗ Push failed:\n" + out)
 					// Detect the canonical non-fast-forward
 					// rejection and surface the safe force-push as
@@ -1957,12 +1998,16 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 									rescueRow.Hide()
 									pushBtn.Disable()
 									remoteSelect.Disable()
+									pushing = true
+									setCloseState(widget.WarningImportance)
 									go func() {
 										fout, ferr := runForcePush(repoRoot, remote, branch)
 										fyne.Do(func() {
 											pushBtn.Enable()
 											remoteSelect.Enable()
 											if ferr != nil {
+												pushing = false
+												setCloseState(widget.MediumImportance)
 												statusLabel.SetText("✗ Force push failed:\n" + fout)
 												return
 											}
@@ -2005,6 +2050,8 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 		pushBtn.Disable()
 		remoteSelect.Disable()
 		setUpstreamCheck.Disable()
+		pushing = true
+		setCloseState(widget.WarningImportance)
 		go func() {
 			out, err := runPull(repoRoot, true)
 			fyne.Do(func() {
@@ -2016,6 +2063,8 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 					// but also no-upstream / fetch errors. Show verbatim
 					// and offer the rescue row (force-with-lease may
 					// still be the right call for an amend).
+					pushing = false
+					setCloseState(widget.MediumImportance)
 					statusLabel.SetText("✗ Pull failed — resolve before pushing:\n" + out)
 					rescueRow.Show()
 					return
@@ -2023,6 +2072,8 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 				if pullHadConflict(out) {
 					// Exit looked clean but the tree is conflicted — the
 					// autostash-pop case. Do not retry the push.
+					pushing = false
+					setCloseState(widget.MediumImportance)
 					statusLabel.SetText("✗ Pull left conflicts in the working tree — resolve in your editor/CLI, then push:\n" + out)
 					rescueRow.Show()
 					return
@@ -2060,13 +2111,13 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 		form,
 		setUpstreamCheck,
 		syncRow,
-		container.NewHBox(pushBtn),
+		container.NewHBox(pushBtn, closeBtn),
 		statusLabel,
 		vulnRow,
 		rescueRow,
 	)
 
-	d := dialog.NewCustom("Push — "+filepathBase(repoRoot), "Close", content, parent)
+	d = dialog.NewCustomWithoutButtons("Push — "+filepathBase(repoRoot), content, parent)
 	d.Resize(fyne.NewSize(680, 460))
 	d.Show()
 }

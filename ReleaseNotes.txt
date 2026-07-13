@@ -7,7 +7,24 @@ Future ideas:
 
 Version 0.9.9 - July 13, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Closing the Release dialog mid-publish used to just kill the
+dialog while `gh release create` kept running unattended in
+the background, with no confirmation and no way to tell it
+had happened.
 
+🐞 FIXED
+▔▔▔▔▔▔▔▔▔▔▔
+- Release dialog's Close button now turns orange while a
+  publish (or pre-flight check / overwrite-delete) is in
+  progress, and green once it completes. Clicking Close
+  during a publish prompts to confirm before cancelling,
+  instead of silently closing over an in-flight release push.
+
+- Push dialog's Close button gets the same treatment: orange
+  during a push, force-push, or pull-then-push, green once one
+  lands, with a confirm prompt if you click Close mid-operation.
+  Unlike Release, this can't kill the git process already in
+  flight — the prompt says so rather than implying a real cancel.
 
 Version 0.9.8 - July 2, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
