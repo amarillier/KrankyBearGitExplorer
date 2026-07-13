@@ -512,6 +512,43 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 	publishBtn := widget.NewButtonWithIcon("Publish", theme.UploadIcon(), nil)
 	publishBtn.Importance = widget.HighImportance
 
+	var publishing bool
+	var activeCancel context.CancelFunc
+	var d *dialog.CustomDialog
+
+	// closeBtn's color reflects release state at a glance: default while
+	// idle, orange (WarningImportance) while a check/publish/delete
+	// goroutine is in flight, green (SuccessImportance) once the release
+	// has landed. Clicking it mid-publish confirms before cancelling —
+	// closing silently while `gh release create` is still uploading is
+	// exactly the accidental-click scenario this guards against.
+	closeBtn := widget.NewButton("Close", nil)
+	closeBtn.OnTapped = func() {
+		if !publishing {
+			if d != nil {
+				d.Hide()
+			}
+			return
+		}
+		dialog.ShowConfirm("Cancel release?",
+			"A release publish is still in progress. Closing now cancels it — the release may end up partially created (or not created at all) on GitHub.\n\nCancel the release and close?",
+			func(confirmed bool) {
+				if !confirmed {
+					return
+				}
+				if activeCancel != nil {
+					activeCancel()
+				}
+				if d != nil {
+					d.Hide()
+				}
+			}, parent)
+	}
+	setCloseState := func(state widget.Importance) {
+		closeBtn.Importance = state
+		closeBtn.Refresh()
+	}
+
 	publishBtn.OnTapped = func() {
 		tag := strings.TrimSpace(tagEntry.Text)
 		title := strings.TrimSpace(titleEntry.Text)
@@ -534,13 +571,18 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 		// Pre-flight: does this tag already have a release?
 		statusLabel.SetText("Checking for existing release…")
 		publishBtn.Disable()
+		publishing = true
+		setCloseState(widget.WarningImportance)
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			activeCancel = cancel
 			defer cancel()
 			exists, checkErr := releaseTagExists(ctx, host, owner, repoName, tag)
 			fyne.Do(func() {
 				if checkErr != nil {
 					publishBtn.Enable()
+					publishing = false
+					setCloseState(widget.MediumImportance)
 					statusLabel.SetText("")
 					dialog.ShowError(checkErr, parent)
 					return
@@ -549,6 +591,7 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 					statusLabel.SetText(fmt.Sprintf("Publishing %s with %d asset(s)…", tag, len(selected)))
 					go func() {
 						ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Minute)
+						activeCancel = cancel2
 						defer cancel2()
 						out, releaseURL, runErr := runReleaseCreate(ctx2, host, owner, repoName, tag, title, notes, selected, prereleaseCheck.Checked, draftCheck.Checked)
 						fyne.Do(func() {
@@ -557,6 +600,8 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 								// publish didn't land, so let the user
 								// try again after fixing the cause.
 								publishBtn.Enable()
+								publishing = false
+								setCloseState(widget.MediumImportance)
 								statusLabel.SetText("✗ Publish failed:\n" + out)
 								return
 							}
@@ -572,6 +617,8 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 							publishBtn.Importance = widget.SuccessImportance
 							publishBtn.Refresh()
 							publishBtn.Disable()
+							publishing = false
+							setCloseState(widget.SuccessImportance)
 							summary := fmt.Sprintf("✓ Published %s to %s.", tag, repoArg(host, owner, repoName))
 							if out != "" {
 								summary += "\n\n" + out
@@ -600,17 +647,22 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 					func(confirmed bool) {
 						if !confirmed {
 							publishBtn.Enable()
+							publishing = false
+							setCloseState(widget.MediumImportance)
 							statusLabel.SetText("Cancelled — existing release left in place.")
 							return
 						}
 						statusLabel.SetText(fmt.Sprintf("Deleting existing release %s…", tag))
 						go func() {
 							ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
+							activeCancel = cancel2
 							defer cancel2()
 							delOut, delErr := deleteReleaseTag(ctx2, host, owner, repoName, tag)
 							fyne.Do(func() {
 								if delErr != nil {
 									publishBtn.Enable()
+									publishing = false
+									setCloseState(widget.MediumImportance)
 									statusLabel.SetText("✗ Delete failed:\n" + delOut)
 									return
 								}
@@ -656,12 +708,6 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 	scroll := container.NewVScroll(scrollContent)
 	scroll.SetMinSize(fyne.NewSize(760, 420))
 
-	var d *dialog.CustomDialog
-	closeBtn := widget.NewButton("Close", func() {
-		if d != nil {
-			d.Hide()
-		}
-	})
 	footerRow := container.NewHBox(
 		prereleaseCheck,
 		draftCheck,
