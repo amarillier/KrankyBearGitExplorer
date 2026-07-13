@@ -1,0 +1,204 @@
+=== Syncing to Ubuntu BUILD ===
+Target: allan@192.168.1.18:/home/allan/KrankyBearGitExplorer
+sending incremental file list
+./
+compile-linux.sh
+compile-mac.sh
+go.mod
+go.sum
+install-fyne.sh
+linux.log
+assets/ReleaseNotes.txt
+
+sent 19,092 bytes  received 1,096 bytes  5,768.00 bytes/sec
+total size is 12,601,517  speedup is 624.21
+
+=== Compiling on Ubuntu BUILD ===
+KrankyBear GitExplorer - Linux Compile Script
+=========================================
+
+
+Checking for required dependencies...
+Installing missing dependencies...
+  Runtime packages: libasound2 libgl1-mesa-glx libx11-6
+  Development packages: libasound2-dev libgl1-mesa-dev libx11-dev
+Hit:1 http://us.archive.ubuntu.com/ubuntu focal InRelease
+Hit:2 http://us.archive.ubuntu.com/ubuntu focal-updates InRelease
+Hit:3 http://us.archive.ubuntu.com/ubuntu focal-backports InRelease
+Hit:4 http://ports.ubuntu.com/ubuntu-ports focal InRelease
+Hit:5 http://us.archive.ubuntu.com/ubuntu focal-security InRelease
+Hit:6 http://ports.ubuntu.com/ubuntu-ports focal-updates InRelease
+Hit:7 http://ports.ubuntu.com/ubuntu-ports focal-security InRelease
+Hit:8 http://ports.ubuntu.com/ubuntu-ports focal-backports InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+libasound2 is already the newest version (1.2.2-2.1ubuntu2.5).
+libasound2-dev is already the newest version (1.2.2-2.1ubuntu2.5).
+libgl1-mesa-dev is already the newest version (21.2.6-0ubuntu0.1~20.04.2).
+libgl1-mesa-glx is already the newest version (21.2.6-0ubuntu0.1~20.04.2).
+libx11-6 is already the newest version (2:1.6.9-2ubuntu1.6).
+libx11-dev is already the newest version (2:1.6.9-2ubuntu1.6).
+The following packages were automatically installed and are no longer required:
+  acpid argyll argyll-ref btrfs-tools command-not-found-data
+  cpp-7-aarch64-linux-gnu diffstat ebtables efibootmgr enchant g++-7
+  g++-7-aarch64-linux-gnu gcc-7-aarch64-linux-gnu gcc-7-aarch64-linux-gnu-base
+  gcc-7-cross-base gcc-8-base:arm64 gcc-8-cross-base gedit-plugin-dashboard
+  gedit-plugin-zeitgeist geoip-database gettext gir1.2-clutter-gst-3.0
+  gir1.2-gepub-0.6 gir1.2-gtksource-3.0 gir1.2-mutter-2 gir1.2-zeitgeist-2.0
+  gnome-user-guide grub-legacy-ec2 guile-2.0-libs gvfs-bin intltool-debian
+  iputils-arping libapt-pkg-perl libarchive-zip-perl libargon2-0
+  libasan4-arm64-cross libasync-mergepoint-perl libavcodec57 libavfilter6
+  libavformat57 libavresample3 libavutil55 libb-hooks-endofscope-perl
+  libb-hooks-op-check-perl libbind9-160 libboost-date-time1.65.1
+  libboost-filesystem1.65.1 libboost-iostreams1.65.1 libboost-locale1.65.1
+  libboost-system1.65.1 libboost-thread1.65.1 libbrlapi0.6 libcamel-1.2-61
+  libcapture-tiny-perl libcdio17 libcgi-fast-perl libcgi-pm-perl
+  libclass-accessor-perl libclass-method-modifiers-perl
+  libclass-xsaccessor-perl libclone-perl libcpanel-json-xs-perl libcroco3
+  libcrystalhd3 libcue1 libcupsfilters1 libcupsimage2
+  libdevel-callchecker-perl libdevel-size-perl libdigest-bubblebabble-perl
+  libdleyna-core-1.0-3 libdns-export1100 libdns1100 libdrm-dev
+  libdrm-dev:arm64 libdrm-etnaviv1:arm64 libdrm-freedreno1:arm64
+  libdrm-tegra0:arm64 libdvdread4 libdynaloader-functions-perl
+  libebook-contacts-1.2-2 libecal-1.2-19 libedataserver-1.2-23
+  libemail-valid-perl libenca0 libenchant1c2a libevent-2.1-6 libexempi3
+  libexiv2-14 libexporter-tiny-perl libfcgi-perl libffi6:arm64
+  libfile-copy-recursive-perl libfile-find-rule-perl libfont-ttf-perl
+  libfuture-perl libgcc-7-dev-arm64-cross libgegl-0.3-0 libgeoip1
+  libgepub-0.6-0 libgfortran4 libgit2-26 libglvnd-core-dev
+  libglvnd-core-dev:arm64 libgmime-3.0-0 libgnome-desktop-3-17 libgspell-1-1
+  libgssdp-1.0-3 libgtk2-perl libgtksourceview-3.0-1
+  libgtksourceview-3.0-common libgtkspell3-3-0 libgupnp-1.0-4 libgweather-3-15
+  libhogweed4 libhttp-parser2.7.1 libhunspell-1.6-0 libicu60 libilmbase12
+  libimport-into-perl libindicator3-7 libio-async-loop-epoll-perl
+  libio-async-perl libio-pty-perl libio-string-perl libip4tc0 libip6tc0
+  libipc-run-perl libiptc0 libiptcdata0 libirs160 libisc-export169 libisc169
+  libisccc160 libisccfg160 libisl19 libjson-c3 libjson-maybexs-perl libjte1
+  liblinux-epoll-perl liblist-compare-perl liblist-moreutils-perl libllvm10
+  libllvm10:arm64 liblouis14 liblvm2app2.2 liblvm2cmd2.02 liblwres160
+  liblxc-common liblxc1 libmagick++-6.q16-7 libmagickcore-6.q16-3
+  libmagickcore-6.q16-3-extra libmagickwand-6.q16-3 libminiupnpc10
+  libmodule-implementation-perl libmodule-runtime-perl libmoo-perl
+  libmoox-aliases-perl libmozjs-52-0 libmutter-2-0 libmysofa0
+  libnamespace-clean-perl libncurses5 libncursesw5 libnet-dns-perl
+  libnet-dns-sec-perl libnet-domain-tld-perl libnet-ip-perl libnettle6
+  libnginx-mod-http-geoip libnss-myhostname libntfs-3g88
+  libnumber-compare-perl libopenexr22 liborcus-0.13-0 libosinfo-1.0-0
+  libpackage-stash-perl libpackage-stash-xs-perl libpango-perl
+  libparams-classify-perl libparse-debianchangelog-perl libpath-tiny-perl
+  libpciaccess-dev libpciaccess-dev:arm64 libpciaccess0:arm64 libperl5.26
+  libperlio-gzip-perl libplymouth4 libpoppler73 libpostproc54 libprotobuf10
+  libpython2.7 libpython3.6 libpython3.6-minimal libpython3.6-stdlib libraw16
+  libreadonly-perl libref-util-perl libref-util-xs-perl
+  libreoffice-avmedia-backend-gstreamer libreoffice-style-galaxy
+  librole-tiny-perl libsane1 libsdl1.2debian libsereal-decoder-perl
+  libsereal-encoder-perl libsereal-perl libssl1.0.0 libstd-rust-1.65
+  libstdc++-7-dev libstdc++-7-dev-arm64-cross libstrictures-perl
+  libstruct-dumb-perl libsub-exporter-progressive-perl libsub-identify-perl
+  libsub-quote-perl libswresample2 libswscale4 libtagc0 libtest-fatal-perl
+  libtest-refcount-perl libtext-glob-perl libtext-levenshtein-perl
+  libtinfo-dev libtinfo5:arm64 libtype-tiny-perl libtype-tiny-xs-perl
+  libubsan0-arm64-cross libunicode-utf8-perl libusbmuxd4
+  libvariable-magic-perl libvpx5 libx11-xcb-dev libx11-xcb-dev:arm64
+  libx264-152 libx265-146 libxapian30 libxcb-dri2-0-dev
+  libxcb-dri2-0-dev:arm64 libxcb-dri3-dev libxcb-dri3-dev:arm64
+  libxcb-glx0-dev libxcb-glx0-dev:arm64 libxcb-present-dev
+  libxcb-present-dev:arm64 libxcb-randr0-dev libxcb-randr0-dev:arm64
+  libxcb-render0:arm64 libxcb-render0-dev libxcb-render0-dev:arm64
+  libxcb-shape0:arm64 libxcb-shape0-dev libxcb-shape0-dev:arm64
+  libxcb-sync-dev libxcb-sync-dev:arm64 libxcb-xfixes0-dev
+  libxcb-xfixes0-dev:arm64 libxdamage-dev libxdamage-dev:arm64
+  libxdamage1:arm64 libxml-simple-perl libxml-writer-perl libxshmfence-dev
+  libxshmfence-dev:arm64 libyaml-libyaml-perl libzeitgeist-2.0-0 lintian lxcfs
+  lxd lxd-client mesa-common-dev mesa-common-dev:arm64 multiarch-support
+  net-tools nplan osinfo-db patchutils python-cairo python-gobject-2
+  python-gtk2 python-pyicu python-talloc python3-asn1crypto python3-pam
+  python3.6 python3.6-minimal python3.6-venv t1utils ubuntu-system-service
+  uidmap x11proto-damage-dev x11proto-fixes-dev xdelta3 zeitgeist-core
+Use 'sudo apt autoremove' to remove them.
+0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+
+Building for Linux AMD64...
+✓ Linux AMD64 build successful
+
+Building for Linux ARM64...
+✓ Linux ARM64 build successful
+
+Done. Binaries:
+-rwxrwxr-x 1 allan allan 32M Jul 13 14:30 bin/kbgitexplorer-linux-amd64
+-rwxrwxr-x 1 allan allan 30M Jul 13 14:33 bin/kbgitexplorer-linux-arm64
+
+Verifying runtime dependencies (ldd)...
+AMD64 binary:
+	libGL.so.1 => /usr/lib/x86_64-linux-gnu/libGL.so.1 (0x00007fb501f20000)
+	libX11.so.6 => /usr/lib/x86_64-linux-gnu/libX11.so.6 (0x00007fb501de3000)
+	libGLdispatch.so.0 => /usr/lib/x86_64-linux-gnu/libGLdispatch.so.0 (0x00007fb5019bf000)
+	libGLX.so.0 => /usr/lib/x86_64-linux-gnu/libGLX.so.0 (0x00007fb50198b000)
+
+Runtime requirements (not bundled):
+- ALSA library (libasound2) for sound playback
+- OpenGL/X11 libs for Fyne (typically present on desktop distros)
+
+If dependencies are missing, they will be automatically installed.
+Manual install commands (for reference):
+  Ubuntu/Debian: sudo apt-get install -y libasound2 libgl1-mesa-glx libx11-6
+  Ubuntu/Debian: sudo apt-get install -y build-essential pkg-config libasound2-dev libgl1-mesa-dev libx11-dev
+  Ubuntu/Debian: sudo apt-get install -y gcc-aarch64-linux-gnu (for ARM64 cross-compilation)
+  Fedora/RHEL:   sudo dnf install -y alsa-lib mesa-libGL libX11
+  Fedora/RHEL:   sudo dnf install -y gcc pkg-config alsa-lib-devel mesa-libGL-devel libX11-devel
+  Fedora/RHEL:   sudo dnf install -y gcc-aarch64-linux-gnu (for ARM64 cross-compilation)
+
+To retrieve binaries from this remote system, run on your local machine:
+  scp allan@ubuntubuildlab2.marillier.local:/home/allan/KrankyBearGitExplorer/bin/kbgitexplorer-linux-* ./bin/
+
+Or set environment variables to auto-send:
+  export SCP_DEST_USER=your_local_username
+  export SCP_DEST_HOST=your_local_hostname_or_ip
+  export SCP_DEST_PATH=~/path/to/bin/  # optional, defaults to ~/KrankyBearGitExplorer/bin/
+
+=== Retrieving compiled binary ===
+-rwxr-xr-x  1 ivan.marillier  staff    32M Jul 13 14:33 ./bin/kbgitexplorer-linux-amd64
+-rwxr-xr-x  1 ivan.marillier  staff    30M Jul 13 14:33 ./bin/kbgitexplorer-linux-arm64
+
+=== Packaging on Ubuntu BUILD ===
+Creating staging directory for Linux payload...
+  Mode: Bundled resources
+Building .deb (amd64) -> ./installers/krankybear-gitexplorer_0.9.9-1_amd64.deb...
+{:timestamp=>"2026-07-13T14:33:27.242540-0500", :message=>"Created package", :path=>"./installers/krankybear-gitexplorer_0.9.9-1_amd64.deb"}
+
+Building .rpm (x86_64) -> ./installers/krankybear-gitexplorer_0.9.9-1_x86_64.rpm...
+{:timestamp=>"2026-07-13T14:33:40.205123-0500", :message=>"Created package", :path=>"./installers/krankybear-gitexplorer_0.9.9-1_x86_64.rpm"}
+
+Done. Packages created:
+  ./installers/krankybear-gitexplorer_0.9.9-1_amd64.deb
+  ./installers/krankybear-gitexplorer_0.9.9-1_x86_64.rpm
+
+Install with:
+  apt install ././installers/krankybear-gitexplorer_0.9.9-1_amd64.deb
+  # or
+  dpkg -i ././installers/krankybear-gitexplorer_0.9.9-1_amd64.deb
+
+Application installed to: /opt/KrankyBearGitExplorer/
+Creating staging directory for Linux payload...
+  Mode: Bundled resources
+Building .deb (arm64) -> ./installers/krankybear-gitexplorer_0.9.9-1_arm64.deb...
+{:timestamp=>"2026-07-13T14:33:52.241284-0500", :message=>"Created package", :path=>"./installers/krankybear-gitexplorer_0.9.9-1_arm64.deb"}
+
+Building .rpm (aarch64) -> ./installers/krankybear-gitexplorer_0.9.9-1_aarch64.rpm...
+{:timestamp=>"2026-07-13T14:34:01.987717-0500", :message=>"Created package", :path=>"./installers/krankybear-gitexplorer_0.9.9-1_aarch64.rpm"}
+
+Done. Packages created:
+  ./installers/krankybear-gitexplorer_0.9.9-1_arm64.deb
+  ./installers/krankybear-gitexplorer_0.9.9-1_aarch64.rpm
+
+Install with:
+  apt install ././installers/krankybear-gitexplorer_0.9.9-1_arm64.deb
+  # or
+  dpkg -i ././installers/krankybear-gitexplorer_0.9.9-1_arm64.deb
+
+Application installed to: /opt/KrankyBearGitExplorer/
+=== Retrieving installers ===
+scp: /home/allan/KrankyBearGitExplorer/installers/*assets*.*: No such file or directory
+WARNING: No assets installers copied. Check remote build output.
