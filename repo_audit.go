@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -12,6 +15,8 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/go-git/go-git/v5"
 )
 
 // repo_audit.go implements "Audit Local Repos…" — a read-only sweep over the
@@ -45,6 +50,13 @@ type repoAuditReport struct {
 	total   int
 	clean   int
 	elapsed time.Duration
+
+	// visibility holds each repo's GitHub/GHES visibility, keyed by path.
+	// Populated by a separate sweepVisibility pass (not by
+	// buildRepoAuditReport) since it needs network access, unlike the rest
+	// of the classification. A repo absent from this map has no recognised
+	// GitHub remote — the normal local-only case, not a failure.
+	visibility map[string]repoVisibilityInfo
 }
 
 // auditRemoteNames returns the configured remote names for a repo at repoRoot,
@@ -127,6 +139,50 @@ func buildRepoAuditReport(repos []string) repoAuditReport {
 	return r
 }
 
+// auditGitHubTarget opens the repo at repoRoot and resolves its GitHub/GHES
+// remote via findGitHubReleaseTarget — the same two-step localGitHubTargets
+// already performs for the Dependabot sweep (dependabot_scan.go), so this
+// stays consistent with the rest of the app rather than re-parsing remote
+// URLs from scratch.
+func auditGitHubTarget(repoRoot string) (host, owner, name string, ok bool) {
+	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return "", "", "", false
+	}
+	return findGitHubReleaseTarget(repo)
+}
+
+// sweepVisibility checks GitHub/GHES visibility for every repo concurrently,
+// bounded by ghConcurrency (the same limit the Dependabot sweep uses),
+// keyed by repo path. Repos with no recognised GitHub remote are omitted —
+// that's the normal local-only case, not something worth flagging.
+func sweepVisibility(repos []string) map[string]repoVisibilityInfo {
+	results := make(map[string]repoVisibilityInfo)
+	var mu sync.Mutex
+	sem := make(chan struct{}, ghConcurrency)
+	var wg sync.WaitGroup
+	for _, root := range repos {
+		host, owner, name, ok := auditGitHubTarget(root)
+		if !ok {
+			continue
+		}
+		wg.Add(1)
+		go func(root, host, owner, name string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			ctx, cancel := context.WithTimeout(context.Background(), visibilityCheckTimeout)
+			defer cancel()
+			info, _ := checkRepoVisibility(ctx, host, owner, name)
+			mu.Lock()
+			results[root] = info
+			mu.Unlock()
+		}(root, host, owner, name)
+	}
+	wg.Wait()
+	return results
+}
+
 // renderRepoAuditReport turns the report into the read-only text shown in the
 // dialog. Pure function (no UI, no git) so it's straightforward to unit-test.
 // Repos are grouped into the four buckets; a repo with multiple issues appears
@@ -142,6 +198,7 @@ func renderRepoAuditReport(r repoAuditReport) string {
 
 	if len(r.entries) == 0 {
 		fmt.Fprintf(&b, "✓ All %d repositories are committed and in sync — nothing to report.\n", r.total)
+		renderVisibilitySection(&b, r)
 		return b.String()
 	}
 
@@ -181,13 +238,91 @@ func renderRepoAuditReport(r repoAuditReport) string {
 		func(e repoAuditEntry) bool { return e.empty }, nil)
 
 	fmt.Fprintf(&b, "✓ %d of %d repositories clean and in sync.\n", r.clean, r.total)
+	renderVisibilitySection(&b, r)
 	return b.String()
 }
 
+// renderVisibilitySection appends the GitHub/GHES visibility summary and any
+// private/internal/failed buckets. It's independent of the clean/dirty
+// buckets above — a repo can be clean *and* privately visible — so it's
+// always appended rather than folded into the "nothing to report" branch.
+// A no-op when r.visibility is empty (e.g. no repos had a recognised GitHub
+// remote, or the sweep hasn't been attached).
+func renderVisibilitySection(b *strings.Builder, r repoAuditReport) {
+	if len(r.visibility) == 0 {
+		return
+	}
+
+	var publicN, privateN, internalN, failedN int
+	for _, info := range r.visibility {
+		switch info.State {
+		case visibilityPublic:
+			publicN++
+		case visibilityPrivate:
+			privateN++
+		case visibilityInternal:
+			internalN++
+		case visibilityCheckFailed:
+			failedN++
+		}
+	}
+	notOnGitHub := r.total - len(r.visibility)
+
+	fmt.Fprintf(b, "GitHub visibility — 🌐 %d public · 🔒 %d private · 🏢 %d internal · %d not on GitHub",
+		publicN, privateN, internalN, notOnGitHub)
+	if failedN > 0 {
+		fmt.Fprintf(b, " · ⚠ %d check(s) failed", failedN)
+	}
+	b.WriteString("\n\n")
+
+	visBucket := func(title string, match func(repoVisibilityInfo) bool, detail func(repoVisibilityInfo) string) {
+		var paths []string
+		for path, info := range r.visibility {
+			if match(info) {
+				paths = append(paths, path)
+			}
+		}
+		if len(paths) == 0 {
+			return
+		}
+		sort.Strings(paths)
+		fmt.Fprintf(b, "%s — %d\n", title, len(paths))
+		lines := make([]string, len(paths))
+		for i, p := range paths {
+			line := "  • " + p
+			if detail != nil {
+				if d := detail(r.visibility[p]); d != "" {
+					line += " — " + d
+				}
+			}
+			lines[i] = line
+		}
+		b.WriteString(strings.Join(lines, "\n"))
+		b.WriteString("\n\n")
+	}
+
+	ghTarget := func(v repoVisibilityInfo) string { return v.Host + "/" + v.Owner + "/" + v.Repo }
+	visBucket("🔒 Private repositories",
+		func(v repoVisibilityInfo) bool { return v.State == visibilityPrivate }, ghTarget)
+	visBucket("🏢 Internal repositories",
+		func(v repoVisibilityInfo) bool { return v.State == visibilityInternal }, ghTarget)
+	visBucket("⚠ Visibility check failed",
+		func(v repoVisibilityInfo) bool { return v.State == visibilityCheckFailed },
+		func(v repoVisibilityInfo) string {
+			if v.Err != nil {
+				return v.Err.Error()
+			}
+			return ""
+		})
+}
+
 // runRepoAudit sweeps every repo in effectiveScanRepos (the dep-scan source
-// folders, minus the skip list), classifies each, and shows the report. The
-// classification is fast local git work, but we still run it off the UI thread
-// behind a progress dialog for consistency with the other all-repos sweeps.
+// folders, minus the skip list), classifies each, checks GitHub/GHES
+// visibility, and shows the report. The classification itself is fast local
+// git work, but the visibility pass needs a `gh` call per GitHub-recognised
+// repo (bounded concurrency via sweepVisibility) — both run off the UI
+// thread behind a progress dialog for consistency with the other
+// all-repos sweeps.
 func runRepoAudit(a fyne.App, parent fyne.Window) {
 	repos := effectiveScanRepos(a)
 	if len(repos) == 0 {
@@ -202,7 +337,7 @@ func runRepoAudit(a fyne.App, parent fyne.Window) {
 	}
 
 	progBar := widget.NewProgressBarInfinite()
-	progLbl := widget.NewLabel(fmt.Sprintf("Auditing %d repositories for local-only, unpushed and uncommitted state…", len(repos)))
+	progLbl := widget.NewLabel(fmt.Sprintf("Auditing %d repositories for local-only, unpushed and uncommitted state, and checking GitHub visibility (via gh, requires it to be authenticated)…", len(repos)))
 	progLbl.Wrapping = fyne.TextWrapWord
 	progDlg := dialog.NewCustom("Audit Local Repos", "Hide (continues in background)", container.NewVBox(progLbl, progBar), parent)
 	progDlg.Show()
@@ -210,6 +345,7 @@ func runRepoAudit(a fyne.App, parent fyne.Window) {
 	started := time.Now()
 	go func() {
 		report := buildRepoAuditReport(repos)
+		report.visibility = sweepVisibility(repos)
 		report.elapsed = time.Since(started).Round(time.Millisecond)
 		text := renderRepoAuditReport(report)
 		fyne.Do(func() {

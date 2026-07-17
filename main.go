@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	appVersion = "0.9.9" // see FyneApp.toml
+	appVersion = "0.9.10" // see FyneApp.toml
 	appAuthor  = "Allan Marillier"
 )
 

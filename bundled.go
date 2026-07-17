@@ -16,6 +16,13 @@ var resourceKrankyBearHackerPng = &fyne.StaticResource{
 	StaticContent: resourceKrankyBearHackerPngData,
 }
 
+//go:embed assets/images/KrankyBearHardHat.png
+var resourceKrankyBearHardHatPngData []byte
+var resourceKrankyBearHardHatPng = &fyne.StaticResource{
+	StaticName:    "assets/images/KrankyBearHardHat.png",
+	StaticContent: resourceKrankyBearHardHatPngData,
+}
+
 //go:embed assets/images/KrankyBearNerd.png
 var resourceKrankyBearNerdPngData []byte
 var resourceKrankyBearNerdPng = &fyne.StaticResource{
