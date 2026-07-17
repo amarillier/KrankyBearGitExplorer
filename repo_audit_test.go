@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +44,52 @@ func TestRenderRepoAuditReportBuckets(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("report missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestRenderRepoAuditReportVisibility(t *testing.T) {
+	r := repoAuditReport{
+		total: 5, // 4 with a resolved GitHub target below + 1 with none ("not on GitHub")
+		clean: 5,
+		visibility: map[string]repoVisibilityInfo{
+			"/src/pub":     {State: visibilityPublic, Host: "github.com", Owner: "amarillier", Repo: "pub"},
+			"/src/priv":    {State: visibilityPrivate, Host: "github.com", Owner: "amarillier", Repo: "priv"},
+			"/src/intl":    {State: visibilityInternal, Host: "git.corp.tanium.com", Owner: "amarillier", Repo: "intl"},
+			"/src/failing": {State: visibilityCheckFailed, Err: errors.New("gh CLI is not authenticated — run `gh auth login`")},
+		},
+	}
+	got := renderRepoAuditReport(r)
+
+	for _, want := range []string{
+		"🌐 1 public · 🔒 1 private · 🏢 1 internal · 1 not on GitHub",
+		"1 check(s) failed",
+		"🔒 Private repositories — 1",
+		"/src/priv",
+		"github.com/amarillier/priv",
+		"🏢 Internal repositories — 1",
+		"/src/intl",
+		"git.corp.tanium.com/amarillier/intl",
+		"⚠ Visibility check failed — 1",
+		"/src/failing",
+		"gh CLI is not authenticated",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("report missing %q:\n%s", want, got)
+		}
+	}
+	// A public repo shouldn't get its own listed bucket — only counted in
+	// the summary line — so its path must not appear anywhere in the text.
+	if strings.Contains(got, "/src/pub") {
+		t.Errorf("public repo should not appear in a bucket:\n%s", got)
+	}
+}
+
+func TestRenderRepoAuditReportNoVisibilityData(t *testing.T) {
+	// No visibility map at all (e.g. sweep never attached) — no section, no
+	// panic on a nil map.
+	got := renderRepoAuditReport(repoAuditReport{total: 2, clean: 2})
+	if strings.Contains(got, "GitHub visibility") {
+		t.Errorf("expected no visibility section without data:\n%s", got)
 	}
 }
 

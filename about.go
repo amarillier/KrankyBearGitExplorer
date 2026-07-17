@@ -21,7 +21,16 @@ func showAbout(a fyne.App) {
 	aboutWindow = a.NewWindow(appName + " - About")
 	aboutWindow.SetIcon(resourceKrankyBearHackerPng)
 
+	// A HardHat badge appears beside the normal app icon when this build is
+	// ahead of the latest published release (an unpublished/dev build), read
+	// from the update-checker's on-disk cache — see appIsAheadOfLatestRelease
+	// in versioncheck.go for why this is cache-only rather than a live check.
 	icon := newBrandingDialogImage(resourceKrankyBearHackerPng)
+	var iconDisplay fyne.CanvasObject = icon
+	if appIsAheadOfLatestRelease() {
+		badge := newBrandingBadgeImage(resourceKrankyBearHardHatPng)
+		iconDisplay = container.NewHBox(icon, badge)
+	}
 
 	title := widget.NewLabelWithStyle(appName, fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	version := widget.NewLabel("Version: " + appVersion)
@@ -57,7 +66,7 @@ func showAbout(a fyne.App) {
 	)
 
 	mainArea := container.NewHBox(
-		container.NewPadded(icon),
+		container.NewPadded(iconDisplay),
 		container.NewPadded(textColumn),
 	)
 

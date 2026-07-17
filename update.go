@@ -18,15 +18,19 @@ func showUpdateDialog(a fyne.App, message string, updateAvailable, localAhead bo
 		return
 	}
 
-	branding := resourceKrankyBearNerdPng
-	if localAhead {
-		branding = resourceKrankyBearHackerPng
-	}
-
 	updateWindow = a.NewWindow(appName + " - Update Check")
-	updateWindow.SetIcon(branding)
+	updateWindow.SetIcon(resourceKrankyBearNerdPng)
 
-	icon := newBrandingDialogImage(branding)
+	// A HardHat badge appears beside -- not instead of -- the normal app icon
+	// when this build is ahead of the latest published release (an
+	// unpublished/dev build), so the dialog still reads as this app with a
+	// highlight, not a different app.
+	icon := newBrandingDialogImage(resourceKrankyBearNerdPng)
+	var iconDisplay fyne.CanvasObject = icon
+	if localAhead {
+		badge := newBrandingBadgeImage(resourceKrankyBearHardHatPng)
+		iconDisplay = container.NewHBox(icon, badge)
+	}
 
 	messageLabel := widget.NewLabel(message)
 	// Wrapped labels report huge MinSize before layout; window Resize is Max'd with it.
@@ -57,7 +61,7 @@ func showUpdateDialog(a fyne.App, message string, updateAvailable, localAhead bo
 	// wrapped labels is still wrong before layout, so the label uses TextWrapOff.
 	mainArea := container.NewBorder(
 		nil, nil,
-		container.NewPadded(icon), nil,
+		container.NewPadded(iconDisplay), nil,
 		container.NewPadded(textColumn),
 	)
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -116,6 +117,42 @@ func comparePrerelease(a, b string) int {
 		return -1
 	}
 	return strings.Compare(a, b)
+}
+
+// cachedRemoteTag reads the last known latest-release tag from the update
+// checker's on-disk cache (written by maybeCheckUpdatesOnLaunch / checkForUpdates
+// via go-update-checker), without touching the network. Returns "" if no cache
+// exists yet (e.g. before the first check has ever run).
+func cachedRemoteTag() string {
+	path := fyneUpdateCheckStatePath(appID)
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var cached struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &cached); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cached.Version)
+}
+
+// appIsAheadOfLatestRelease reports whether this build is newer than the
+// latest release recorded in the update-checker's cache. Cache-only (no
+// network) so the About window can show the same HardHat badge as the
+// update-check window without adding a live GitHub call to a dialog that's
+// meant to open instantly; it may lag reality until the next automatic or
+// manual check refreshes the cache.
+func appIsAheadOfLatestRelease() bool {
+	remote := cachedRemoteTag()
+	if remote == "" {
+		return false
+	}
+	return versionOrder(appVersion, remote) > 0
 }
 
 // checkForUpdates queries GitHub and opens the update dialog on the UI thread.

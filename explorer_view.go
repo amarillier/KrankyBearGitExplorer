@@ -47,6 +47,7 @@ type explorerView struct {
 	statusLabel     *widget.Label
 	syncLabel       *widget.Label
 	releaseLabel    *widget.Label
+	visibilityLabel *widget.Label
 	depScanLabel    *widget.Label
 	depAlertLabel   *widget.Label
 	lastCommitLabel *widget.Label
@@ -60,15 +61,15 @@ type explorerView struct {
 	tree        *widget.Tree
 	contentArea *fyne.Container
 
-	modeBtn     *ttwidget.Button
-	upBtn       *ttwidget.Button
-	reloadBtn   *ttwidget.Button
-	historyBtn  *ttwidget.Button
-	healthBtn   *ttwidget.Button
-	depScanBtn  *ttwidget.Button
-	viewBtn     *ttwidget.Button
-	repoBtn     *ttwidget.Button
-	diffBtn     *ttwidget.Button
+	modeBtn    *ttwidget.Button
+	upBtn      *ttwidget.Button
+	reloadBtn  *ttwidget.Button
+	historyBtn *ttwidget.Button
+	healthBtn  *ttwidget.Button
+	depScanBtn *ttwidget.Button
+	viewBtn    *ttwidget.Button
+	repoBtn    *ttwidget.Button
+	diffBtn    *ttwidget.Button
 
 	// selectedFileRel / selectedFileAbs hold the repo-relative and on-disk
 	// paths of the currently-selected *file* row in the folder list. Reset
@@ -226,6 +227,7 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.statusLabel = widget.NewLabel("")
 	v.syncLabel = widget.NewLabel("")
 	v.releaseLabel = widget.NewLabel("")
+	v.visibilityLabel = widget.NewLabel("")
 	v.depScanLabel = widget.NewLabel("")
 	v.seedDepScanBadge()
 	v.depAlertLabel = widget.NewLabel("")
@@ -235,7 +237,7 @@ func (v *explorerView) buildUI() fyne.CanvasObject {
 	v.lastCommitLabel.Truncation = fyne.TextTruncateEllipsis
 	headerRight := container.NewVBox(
 		v.pathLabel,
-		container.NewHBox(v.branchLabel, v.statusLabel, v.syncLabel, v.releaseLabel, v.depScanLabel, v.depAlertLabel),
+		container.NewHBox(v.branchLabel, v.statusLabel, v.syncLabel, v.releaseLabel, v.visibilityLabel, v.depScanLabel, v.depAlertLabel),
 		v.lastCommitLabel,
 	)
 
@@ -893,6 +895,7 @@ func (v *explorerView) refresh() {
 		v.lastCommitLabel.SetText(latestCommitSummary(v.repo))
 		v.refreshRemoteSync()
 		v.refreshReleaseStatus()
+		v.refreshVisibility()
 		v.modeBtn.Enable()
 		v.historyBtn.Enable()
 		v.healthBtn.Enable()
@@ -991,6 +994,41 @@ func (v *explorerView) refreshReleaseStatus() {
 	}
 	info := detectReleaseStatus(v.repoRoot)
 	v.releaseLabel.SetText("  •  " + info.label())
+}
+
+// refreshVisibility paints the header's GitHub visibility indicator
+// (public/private/internal). Git has no concept of this — it's an API
+// property — so it always requires a gh call; mirrors refreshRemoteSync's
+// async-with-stale-guard pattern rather than blocking the UI thread.
+func (v *explorerView) refreshVisibility() {
+	if v.visibilityLabel == nil {
+		return
+	}
+	if v.repo == nil {
+		v.visibilityLabel.SetText("")
+		return
+	}
+	host, owner, name, ok := findGitHubReleaseTarget(v.repo)
+	if !ok {
+		v.visibilityLabel.SetText("")
+		return
+	}
+	snapshotRoot := v.repoRoot
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), visibilityCheckTimeout)
+		defer cancel()
+		info, _ := checkRepoVisibility(ctx, host, owner, name)
+		fyne.Do(func() {
+			if v.visibilityLabel == nil || v.repoRoot != snapshotRoot {
+				return
+			}
+			if label := info.label(); label != "" {
+				v.visibilityLabel.SetText("  •  " + label)
+			} else {
+				v.visibilityLabel.SetText("")
+			}
+		})
+	}()
 }
 
 // resetFilters clears the filter state and the widgets back to defaults.

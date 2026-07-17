@@ -1,0 +1,153 @@
+Connecting to Windows host: allanm@192.168.1.9
+Using batch wrapper: C:\Allan\Source\go\KrankyBearGitExplorer\compile-windows.bat
+Parameters:  -package
+
+KrankyBearGitExplorer - Windows compile (GUI, native Windows host)
+=============================================================
+Working directory: C:\Allan\Source\go\KrankyBearGitExplorer
+
+vendor/modules.txt missing, running prepare-deps.ps1...
+========================================
+KrankyBear GitExplorer - Dependency Setup
+========================================
+
+û Found Go: go version go1.26.3 windows/amd64
+
+Step 1: Downloading all dependencies...
+Running: go mod download
+û Dependencies downloaded successfully
+
+Step 2: Tidying module dependencies...
+Running: go mod tidy
+û Module dependencies tidied
+
+Step 3: Verifying module dependencies...
+Running: go mod verify
+all modules verified
+û Module dependencies verified
+
+========================================
+Dependency Setup Complete!
+========================================
+
+Summary:
+   Direct dependencies: 7
+   Indirect dependencies: 51
+   Vendor packages: 0
+
+You can now build the application with:
+  go build -trimpath -ldflags=\
+
+Building Windows GUI binary (bin\KrankyBearGitExplorer.exe)...
+OK: bin\KrankyBearGitExplorer.exe
+Running Inno Setup packaging...
+Inno Setup 6 Command-Line Compiler
+Copyright (C) 1997-2023 Jordan Russell. All rights reserved.
+Portions Copyright (C) 2000-2023 Martijn Laan. All rights reserved.
+Portions Copyright (C) 2001-2004 Alex Yackimoff. All rights reserved.
+https://www.innosetup.com
+
+Compiler engine version: Inno Setup 6.2.2
+
+Preprocessing
+   Reading file: C:\Program Files (x86)\Inno Setup 6\ISPPBuiltins.iss
+Parsing [Setup] section, line 16
+Parsing [Setup] section, line 17
+Parsing [Setup] section, line 18
+Parsing [Setup] section, line 20
+Parsing [Setup] section, line 21
+Parsing [Setup] section, line 22
+Parsing [Setup] section, line 23
+Parsing [Setup] section, line 26
+Parsing [Setup] section, line 27
+Parsing [Setup] section, line 28
+Parsing [Setup] section, line 29
+Parsing [Setup] section, line 30
+Parsing [Setup] section, line 31
+Parsing [Setup] section, line 32
+Parsing [Setup] section, line 33
+Parsing [Setup] section, line 36
+Parsing [Setup] section, line 37
+Parsing [Setup] section, line 38
+Parsing [Setup] section, line 39
+Parsing [Setup] section, line 40
+Parsing [Setup] section, line 41
+Parsing [Setup] section, line 42
+Reading file (LicenseFile)
+Reading file (WizardImageFile)
+Reading file (WizardSmallImageFile)
+Preparing Setup program executable
+   Updating icons (SETUP.E32)
+   Updating version info (SETUP.E32)
+Determining language code pages
+Parsing [Languages] section, line 45
+   Reading file: C:\Program Files (x86)\Inno Setup 6\Default.isl
+   Messages in script file
+Reading default messages from Default.isl
+Parsing [Languages] section, line 45
+   Reading file: C:\Program Files (x86)\Inno Setup 6\Default.isl
+Parsing [LangOptions], [Messages], and [CustomMessages] sections
+   Messages in script file
+Reading [Code] section
+Parsing [Tasks] section, line 48
+Parsing [Tasks] section, line 50
+Parsing [Icons] section, line 66
+Parsing [Icons] section, line 67
+Parsing [Registry] section, line 59
+Parsing [Registry] section, line 60
+Parsing [Registry] section, line 61
+Parsing [Registry] section, line 62
+Parsing [Registry] section, line 63
+Parsing [Run] section, line 71
+Parsing [UninstallRun] section, line 74
+Parsing [Files] section, line 53
+Parsing [Files] section, line 54
+Parsing [Files] section, line 55
+Parsing [Files] section, line 56
+   Reading version info: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\ReleaseNotes.txt
+Creating setup files
+   Updating icons (SETUP.EXE)
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\bin\KrankyBearGitExplorer.exe
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearNerd.ico
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\LICENSE
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\ReleaseNotes.txt
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\i18n\about_en.txt
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\i18n\en.json
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\i18n\help_en.txt
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\i18n\LanguagePacks.md
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\i18n\license_en.txt
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\i18n\updates_en.txt
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearBeret.png
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearHacker.png
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearHardHat.png
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearHardHat64.png
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearHogwartsSorting.icns
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearNerd.icns
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearNerd.png
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearNerd256.png
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\KrankyBearNerd64.png
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\MiniBot.png
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\images\RichardsGuideSoftwareDev.jpg
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\sounds\boing.mp3
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\sounds\uhOh.mp3
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\sounds\wheeHoo.mp3
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\assets\sounds\zip.mp3
+   Compressing: C:\Allan\Source\go\KrankyBearGitExplorer\Inno\..\ReleaseNotes.txt
+   Compressing Setup program executable
+   Updating version info (SETUP.EXE)
+   Updating manifest (SETUP.EXE)
+
+Warning: There are [UninstallRun] section entries without a RunOnceId parameter. By assigning a string to RunOnceId, you can ensure that a particular [UninstallRun] entry will only be executed once during uninstallation. See the "[UninstallRun]" topic in help file for more information.
+
+Successful compile (8.875 sec). Resulting Setup program filename is:
+C:\Allan\Source\go\KrankyBearGitExplorer\installers\KrankyBearGitExplorerSetup_0.9.9.exe
+Inno Setup packaging succeeded.
+
+=============================================================
+Compile complete.
+
+Name                        Length
+----                        ------
+KrankyBearGitExplorer.exe 33120256
+
+
