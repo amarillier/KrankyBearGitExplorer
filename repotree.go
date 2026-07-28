@@ -153,6 +153,25 @@ func buildRepoTreeModel(repoRoot string) (*repoTreeModel, *git.Repository, error
 		m.fileStatus[p] = formatStatus(fs)
 	}
 
+	// wt.StatusWithOptions only emits entries for paths its internal diff walk
+	// actually visits — in practice that silently drops a large fraction of
+	// clean, unmodified tracked files (observed: ~46-67% missing in real
+	// repos), leaving them with no fileStatus entry at all. Since the explorer
+	// treats "" as "not tracked" (isTrackedStatus), those files lost every
+	// tracked-only menu action (blame, diff vs HEAD, git rm, git rm --cached).
+	// The git index is the authoritative, complete list of tracked paths
+	// regardless of dirty state, so cross-reference it and backfill anything
+	// the status walk missed.
+	if idx, err := repo.Storer.Index(); err == nil {
+		for _, e := range idx.Entries {
+			p := filepath.ToSlash(e.Name)
+			m.registerPath(p)
+			if _, ok := m.fileStatus[p]; !ok {
+				m.fileStatus[p] = "tracked"
+			}
+		}
+	}
+
 	// Roll up non-clean child counts onto every ancestor directory. Walked
 	// after fileStatus is fully populated so each leaf is classified once.
 	for p, raw := range m.fileStatus {

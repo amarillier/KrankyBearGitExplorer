@@ -136,6 +136,11 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 	})
 	gitRmCached.Disabled = !tracked || e.isDir
 
+	untrackIgnore := fyne.NewMenuItem("Untrack & ignore…", func() {
+		v.untrackAndIgnore(e.name, e.rel)
+	})
+	untrackIgnore.Disabled = !tracked || e.isDir
+
 	deleteDisk := fyne.NewMenuItem("Delete from disk…", func() {
 		v.deleteFromDisk(e.name, absPath)
 	})
@@ -158,6 +163,7 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 		deleteDisk,
 		gitRm,
 		gitRmCached,
+		untrackIgnore,
 	}
 	menu := fyne.NewMenu("", items...)
 
@@ -368,6 +374,72 @@ func (v *explorerView) addToGitignore(displayName, rel string) {
 		if _, err := f.WriteString(line); err != nil {
 			dialog.ShowError(fmt.Errorf("write .gitignore: %w", err), v.win)
 			return
+		}
+		v.refresh()
+	}, v.win)
+}
+
+// untrackAndIgnore combines `git rm --cached` with a .gitignore entry in one
+// step — the common "this was never supposed to be committed" cleanup that
+// otherwise takes two separate right-clicks (git rm --cached, then Add to
+// .gitignore once the file re-renders as untracked). Skips the .gitignore
+// write if an exact-match entry already covers the path, so it's safe to
+// run on a file that's already got one.
+func (v *explorerView) untrackAndIgnore(displayName, rel string) {
+	if v.repoRoot == "" {
+		return
+	}
+	slashRel := filepath.ToSlash(rel)
+	anchored := "/" + slashRel
+	path := filepath.Join(v.repoRoot, ".gitignore")
+	existing, _ := os.ReadFile(path)
+
+	alreadyIgnored := false
+	for _, line := range strings.Split(string(existing), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == anchored || trimmed == slashRel {
+			alreadyIgnored = true
+			break
+		}
+	}
+
+	var msg string
+	if alreadyIgnored {
+		msg = fmt.Sprintf("Untrack %q?\n\nRemoves it from the git index (git rm --cached) but keeps the file on disk. .gitignore already has a matching entry, so it's left untouched.", displayName)
+	} else {
+		msg = fmt.Sprintf("Untrack %q and add it to .gitignore?\n\nRemoves it from the git index (git rm --cached), keeps the file on disk, and appends %q to .gitignore so it stays untracked.", displayName, anchored)
+	}
+
+	dialog.ShowConfirm("Untrack & ignore", msg, func(ok bool) {
+		if !ok {
+			return
+		}
+		cmd := exec.Command("git", "-C", v.repoRoot, "rm", "--cached", "--", rel)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("git rm --cached: %w\n%s", err, strings.TrimSpace(string(out))), v.win)
+			return
+		}
+		if !alreadyIgnored {
+			var line string
+			switch {
+			case len(existing) == 0:
+				line = anchored + "\n"
+			case existing[len(existing)-1] == '\n':
+				line = anchored + "\n"
+			default:
+				line = "\n" + anchored + "\n"
+			}
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if err != nil {
+				dialog.ShowError(fmt.Errorf("open .gitignore: %w", err), v.win)
+				return
+			}
+			defer f.Close()
+			if _, err := f.WriteString(line); err != nil {
+				dialog.ShowError(fmt.Errorf("write .gitignore: %w", err), v.win)
+				return
+			}
 		}
 		v.refresh()
 	}, v.win)

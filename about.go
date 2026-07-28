@@ -25,9 +25,10 @@ func showAbout(a fyne.App) {
 	// ahead of the latest published release (an unpublished/dev build), read
 	// from the update-checker's on-disk cache — see appIsAheadOfLatestRelease
 	// in versioncheck.go for why this is cache-only rather than a live check.
-	icon := newBrandingDialogImage(resourceKrankyBearHackerPng)
+	icon := newBrandingDialogImage(resourceKrankyBearNerdPng)
 	var iconDisplay fyne.CanvasObject = icon
 	if appIsAheadOfLatestRelease() {
+		// icon = newBrandingDialogImage(resourceKrankyBearHackerPng)
 		badge := newBrandingBadgeImage(resourceKrankyBearHardHatPng)
 		iconDisplay = container.NewHBox(icon, badge)
 	}

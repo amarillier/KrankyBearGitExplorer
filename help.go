@@ -38,7 +38,8 @@ expected to happen in your IDE or the git CLI. GitExplorer's value is
 in the visual at-a-glance plus selective edits: right-click any file
 row for Reveal, Copy path, Open in $EDITOR, Blame…, Diff against
 HEAD…, Show history for this file…, git add, Add to / Un-ignore in
-.gitignore, git rm -f, git rm --cached, Delete from disk.
+.gitignore, git rm -f, git rm --cached, Untrack & ignore (both in one
+step), Delete from disk.
 
 The two-pane diff tool that this app grew out of is still available
 via File → Compare Two Files… and the new Diff toolbar button (and
