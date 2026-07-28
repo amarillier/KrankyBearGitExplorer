@@ -5,6 +5,31 @@ Future ideas:
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
 - git log: --oneline, --stat, --decorate, after rebase - committer vs. author, -p -1 <file>, parent SHAs for merges?, trailers highlighted?
 
+Version 0.9.11 - July 28, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ NEW
+▔▔▔▔▔▔▔▔▔▔▔
+- "Untrack & ignore…" right-click action: runs git rm --cached and adds
+  an anchored .gitignore entry in one step, instead of two separate
+  right-clicks. Skips the .gitignore write if a matching entry is
+  already there. For the "this was never supposed to be committed"
+  cleanup — not a substitute for purging real secrets from history,
+  which needs a history rewrite plus credential rotation, outside this
+  tool's scope.
+
+🐛 BUGS / FIXES
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+- Clean tracked files could silently lose every tracked-file context
+  menu action (Blame, Diff against HEAD, Show history, git log -p,
+  git rm -f, git rm --cached). go-git's Status() only reports files its
+  internal diff walk visits, which skips a large share of unmodified
+  tracked files in practice — in one real repo, 90 of 134 tracked files
+  never appeared in the status map at all, so the explorer treated them
+  as untracked. buildRepoTreeModel now cross-references the git index
+  directly (the authoritative list of tracked paths) to backfill
+  anything the status walk missed.
+
+
 Version 0.9.10 - July 17, 2026
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Git has no concept of "public" vs "private" — that's purely a
