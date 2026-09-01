@@ -1,8 +1,11 @@
 package main
 
 import (
+	"time"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/systray"
 )
 
 func undoMenuItem(v *diffView) *fyne.MenuItem {
@@ -382,6 +385,17 @@ func (v *diffView) setupMenus(setTray bool) {
 			if desk, ok := v.app.(desktop.App); ok {
 				desk.SetSystemTrayMenu(v.buildTrayMenu())
 				desk.SetSystemTrayIcon(resourceKrankyBearNerdPng)
+
+				// Hover tooltip on the tray icon (Windows/macOS; no-op on
+				// Linux) -- desktop.App has no tooltip setter, but
+				// fyne.io/systray (what Fyne's own driver already uses
+				// internally for the tray icon) does. Deferred slightly
+				// since, unlike Fyne's own SetSystemTrayIcon call above, a
+				// raw systray.SetTooltip call has no built-in retry/caching
+				// if the tray isn't fully ready yet.
+				time.AfterFunc(300*time.Millisecond, func() {
+					systray.SetTooltip(appName)
+				})
 			}
 		}
 	})
