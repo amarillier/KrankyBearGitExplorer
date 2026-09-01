@@ -19,6 +19,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"fyne.io/systray"
 
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
@@ -1323,6 +1324,17 @@ func (v *explorerView) setupMenus(setTray bool) {
 			if desk, ok := v.app.(desktop.App); ok {
 				desk.SetSystemTrayMenu(v.buildTrayMenu())
 				desk.SetSystemTrayIcon(resourceKrankyBearNerdPng)
+
+				// Hover tooltip on the tray icon (Windows/macOS; no-op on
+				// Linux) -- desktop.App has no tooltip setter, but
+				// fyne.io/systray (what Fyne's own driver already uses
+				// internally for the tray icon) does. Deferred slightly
+				// since, unlike Fyne's own SetSystemTrayIcon call above, a
+				// raw systray.SetTooltip call has no built-in retry/caching
+				// if the tray isn't fully ready yet.
+				time.AfterFunc(300*time.Millisecond, func() {
+					systray.SetTooltip(appName)
+				})
 			}
 		}
 	})
