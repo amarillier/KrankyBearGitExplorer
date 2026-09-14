@@ -1450,6 +1450,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItem("About", func() { showAbout(v.app) }),
 		fyne.NewMenuItem("Check for Updates…", func() { checkForUpdates(v.app) }),
 		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
+		fyne.NewMenuItem("Release Notes", func() { showReleaseNotes(v.app) }),
 	)
 
 	return fyne.NewMainMenu(file, view, help)
@@ -2113,6 +2114,7 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		fyne.NewMenuItem("About", func() { showAbout(v.app) }),
 		fyne.NewMenuItem("Check for Updates…", func() { checkForUpdates(v.app) }),
 		fyne.NewMenuItem("Help", func() { showHelp(v.app) }),
+		fyne.NewMenuItem("Release Notes", func() { showReleaseNotes(v.app) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() { v.quitApp() }),
 	)
