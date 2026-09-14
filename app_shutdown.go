@@ -50,6 +50,9 @@ func hideAuxiliaryWindows() {
 	if helpWindow != nil {
 		windowHide(helpWindow)
 	}
+	if releaseNotesWindow != nil {
+		windowHide(releaseNotesWindow)
+	}
 	if updateWindow != nil {
 		windowHide(updateWindow)
 	}

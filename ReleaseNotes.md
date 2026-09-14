@@ -1,14 +1,61 @@
-═══════════════════════════════════════════════════════════════════════════════
-KrankyBear GitExplorer - RELEASE NOTES
-═══════════════════════════════════════════════════════════════════════════════
-Future ideas:
+# KrankyBear GitExplorer — Release Notes
+
+## Future ideas
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
 - git log: --oneline, --stat, --decorate, after rebase - committer vs. author, -p -1 <file>, parent SHAs for merges?, trailers highlighted?
 
-Version 0.9.11 - July 28, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔
+## Version 0.9.12 - September 14, 2026
+
+Release notes go real Markdown. ReleaseNotes.txt is now ReleaseNotes.md —
+real headings, nested lists, and inline code instead of hand-drawn
+box-drawing rules and bullet glyphs — and a new in-app viewer means you no
+longer have to leave the app to read them.
+
+### ✨ NEW
+
+- Release Notes viewer — new Help menu entry (also on the tray menu, and
+  in the two-pane Compare Two Files… tool's own Help menu) opens this file
+  in its own window, rendered as real Markdown via Fyne's
+  `widget.NewRichTextFromMarkdown`. The file is read and parsed in a
+  background goroutine with a loading spinner, so a large release history
+  never blocks the window from appearing.
+
+- Tray icon now shows a hover tooltip with the app name (Windows/macOS —
+  no-op on Linux, matching Fyne's own tray behavior there).
+
+### 🔧 CHANGED
+
+- ReleaseNotes.txt renamed to ReleaseNotes.md, and its full history
+  converted to real Markdown: `##` for each version, `###` for each
+  subsection (✨ NEW / 🐛 BUGS / FIXES / etc.), and proper nested bullet
+  lists in place of the old box-drawing rule + "•" bullet-glyph format.
+  Reads equally well as plain text or through a real Markdown renderer.
+
+- Repo ▾ → Release…'s notes auto-extraction now checks ReleaseNotes.md
+  first (falling back to ReleaseNotes.txt, RELEASE_NOTES.*, RELEASES.md,
+  and CHANGELOG.md — in that order) and recognises both the old
+  plain-text "Version X.Y.Z" header and a markdown "## Version X.Y.Z"
+  heading, so extraction keeps working for target repos on either
+  format.
+
+- Build, packaging, and installer scripts (compile-mac.sh, package.sh,
+  the sync2*.sh scripts, the Inno .iss) all repointed at
+  ReleaseNotes.md.
+
+- setver.sh now inserts each new version's "## Version" heading at the
+  correct spot — right above the current top entry, below the title and
+  "Future ideas" section — instead of requiring a manual edit, and skips
+  re-inserting if that version's section already exists.
+
+### 🏗️ INTERNALS
+
+- Dependabot vulnerability fixes: go-git bumped to v5.19.2 and
+  golang.org/x/text to v0.39.0.
+
+## Version 0.9.11 - July 28, 2026
+
+### ✨ NEW
+
 - "Untrack & ignore…" right-click action: runs git rm --cached and adds
   an anchored .gitignore entry in one step, instead of two separate
   right-clicks. Skips the .gitignore write if a matching entry is
@@ -17,8 +64,8 @@ Version 0.9.11 - July 28, 2026
   which needs a history rewrite plus credential rotation, outside this
   tool's scope.
 
-🐛 BUGS / FIXES
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🐛 BUGS / FIXES
+
 - Clean tracked files could silently lose every tracked-file context
   menu action (Blame, Diff against HEAD, Show history, git log -p,
   git rm -f, git rm --cached). go-git's Status() only reports files its
@@ -29,9 +76,8 @@ Version 0.9.11 - July 28, 2026
   directly (the authoritative list of tracked paths) to backfill
   anything the status walk missed.
 
+## Version 0.9.10 - July 17, 2026
 
-Version 0.9.10 - July 17, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Git has no concept of "public" vs "private" — that's purely a
 GitHub/GHES API property — so a repo you forgot to make public
 could silently break things (an update-checker test repo of
@@ -41,8 +87,8 @@ warn you. Visibility is now surfaced in both places you'd want
 to notice it: a single repo you're actively working in, and a
 sweep across everything.
 
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Repo header gains a visibility badge (🌐 public / 🔒 private /
   🏢 internal) next to the release indicator, refreshed on every
   repo switch via `gh repo view`. Blank when the repo has no
@@ -69,16 +115,15 @@ sweep across everything.
   update-checker's on-disk cache (no live network call) so the
   window still opens instantly.
 
+## Version 0.9.9 - July 13, 2026
 
-Version 0.9.9 - July 13, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Closing the Release dialog mid-publish used to just kill the
 dialog while `gh release create` kept running unattended in
 the background, with no confirmation and no way to tell it
 had happened.
 
-🐞 FIXED
-▔▔▔▔▔▔▔▔▔▔▔
+### 🐞 FIXED
+
 - Release dialog's Close button now turns orange while a
   publish (or pre-flight check / overwrite-delete) is in
   progress, and green once it completes. Clicking Close
@@ -91,13 +136,13 @@ had happened.
   Unlike Release, this can't kill the git process already in
   flight — the prompt says so rather than implying a real cancel.
 
-Version 0.9.8 - July 2, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Version 0.9.8 - July 2, 2026
+
 Minor UX improvement - open folder modal is larger and dynamically resizes according to app window size
 Dependabot apply all updates (single repo only)
 
-Version 0.9.7 - June 4, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Version 0.9.7 - June 4, 2026
+
 When someone else (or another machine) has pushed to your
 branch, a plain push is rejected and the old fix was a
 multi-step dance: pull in one dialog, close it, re-open
@@ -105,8 +150,8 @@ Push, push again. Push now handles the whole rebase-and-
 republish in a single click — and warns you before the
 rejection when it can.
 
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - "Pull first (rebase) + retry" in the Push dialog's rescue
   row now does it all in place: pull --rebase, then — only
   if the working tree comes back clean — re-attempt the
@@ -119,8 +164,8 @@ rejection when it can.
   front instead of letting the push fail first. Uses the
   cached ahead/behind counts — no network call.
 
-🐞 FIXED
-▔▔▔▔▔▔▔▔▔▔▔
+### 🐞 FIXED
+
 - The push-rejection rescue row now also appears for the
   "someone else pushed" case. Git reports that as
   "(fetch first)", which the old detector missed — it only
@@ -128,8 +173,8 @@ rejection when it can.
   the Pull-first rescue never surfaced for the exact
   situation it was built for. Both are caught now.
 
-SAFETY
-▔▔▔▔▔▔▔▔▔▔▔
+### SAFETY
+
 - A rebase/merge conflict (or an autostash-pop conflict)
   stops the chain before the push — a half-integrated tree
   is never published. Git's output is shown verbatim and
@@ -137,8 +182,8 @@ SAFETY
   stays a separate, explicit --force-with-lease action
   behind a confirmation.
 
-Version 0.9.6 - June 2, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Version 0.9.6 - June 2, 2026
+
 A new read-only sweep answers a question that's easy to
 lose track of across a folder full of projects: which
 repos have I committed to locally but never pushed —
@@ -146,17 +191,17 @@ or left with work in progress? "Audit Local Repos…"
 walks the same source folders as the dependency sweep
 and reports only the repos that need attention.
 
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - "Audit Local Repos…" (File menu + system tray) sweeps
   every git repo under your configured source folders and
   reports, read-only, the ones needing attention, grouped
   into four buckets:
-    • Local-only — committed but no remote configured.
-    • Unpushed — current branch is ahead of its remote,
+    - Local-only — committed but no remote configured.
+    - Unpushed — current branch is ahead of its remote,
       or has no upstream set.
-    • Uncommitted — a dirty worktree (work in progress).
-    • Empty — initialized but never committed.
+    - Uncommitted — a dirty worktree (work in progress).
+    - Empty — initialized but never committed.
   Clean, in-sync repos are omitted, with a "N of M clean"
   summary, so the report stays signal. It's purely
   informational — no push/commit buttons — a safe "what
@@ -166,16 +211,16 @@ and reports only the repos that need attention.
   already set under "Configure Repos to Scan…", so
   there's nothing new to configure.
 
-ℹ NOTES
-▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ℹ NOTES
+
 - GitHub Enterprise: the "Authentication needed" advice
   in the all-repos Dependabot report, the in-app Help,
   and the README now note that `gh auth refresh -h
   <host>` usually restores Enterprise access after a
   VPN/session timeout, without a full `gh auth login`.
 
-Version 0.9.5 - May 30, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Version 0.9.5 - May 30, 2026
+
 The single-folder dependency scan grows up: now you can
 sweep every repo you work on in one pass, instead of
 opening each project to scan it. dep-scan finds the git
@@ -189,8 +234,8 @@ This release ships the on-demand sweep; a scheduled
 stay passive by design — the badge updates, nothing
 pops up over your work.
 
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - New "Scan All Repos…" (File menu + system tray) runs
   one dep-scan pass across every git repo discovered
   under your configured source folders and shows a
@@ -209,15 +254,15 @@ pops up over your work.
   "View Last Scan Report…" reopens this session's
   report.
 
-ℹ NOTES
-▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ℹ NOTES
+
 - Reuses the same local dep-scan engine (osv-scanner +
   govulncheck) as the existing single-folder scan — no
   GitHub token or network access required. Needs the
   dep-scan skill installed (see README_DEPSCAN.md).
 
-✨ NEW — GitHub Dependabot scanning
-▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW — GitHub Dependabot scanning
+
 Alongside the local scan, you can now pull GitHub's own
 Dependabot alerts — the authoritative, continuously
 updated view of vulnerabilities in your pushed code.
@@ -262,8 +307,8 @@ updated view of vulnerabilities in your pushed code.
 - Uses the gh CLI for auth (no token stored by the app) —
   install gh and run `gh auth login`.
 
-Version 0.9.4 - May 29, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Version 0.9.4 - May 29, 2026
+
 Three small UX wins for daily-driver use: clearer
 post-push feedback, a plain-text patch viewer that
 mirrors git log -p at the shell, and an "is this repo
@@ -279,8 +324,8 @@ stops you from accidentally re-publishing when nothing
 has changed since the last tag — a real risk when you
 bounce between projects.
 
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Push button turns green and reads "✓ Pushed" after a
   successful push (or force-with-lease push). Resets to
   the default blue "Push" on the next Push tap, or when
@@ -299,24 +344,24 @@ bounce between projects.
 
 - Release-status indicator on the explorer header shows
   whether HEAD is at the latest semver tag:
-    • "released vX.Y.Z" — HEAD is at the tag (nothing
+    - "released vX.Y.Z" — HEAD is at the tag (nothing
       new to release).
-    • "↑N since vX.Y.Z" — N commits since the last tag
+    - "↑N since vX.Y.Z" — N commits since the last tag
       (ready to release).
-    • "no release tag" — repo has never been released.
+    - "no release tag" — repo has never been released.
   The Release… dialog now opens with a matching banner
   at the top:
-    • ⚠ HEAD already at vX.Y.Z — publishing would
+    - ⚠ HEAD already at vX.Y.Z — publishing would
       re-release the same code.
-    • ✓ N commit(s) since vX.Y.Z — ready to release.
-    • ℹ No prior release detected — this will be the
+    - ✓ N commit(s) since vX.Y.Z — ready to release.
+    - ℹ No prior release detected — this will be the
       first.
   The anchor is the latest semver tag, not FyneApp.toml's
   Version field, so a version-bump commit correctly
   counts as "ahead" of the last release.
 
-Version 0.9.3 - May 26, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Version 0.9.3 - May 26, 2026
+
 Release dialog fixes for cross-project use, plus a layout
 improvement so Publish is always one click away.
 
@@ -327,16 +372,16 @@ TQuest required manually overwriting both fields and the
 notes section never matched. The dialog now reads the target
 repo's own version and pre-fills from that.
 
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Release… now reads the target repo's version, not the
   explorer's. Detection order:
-    • FyneApp.toml → Version = "x.y.z" (Fyne projects — the
+    - FyneApp.toml → Version = "x.y.z" (Fyne projects — the
       version baked into the binary at build time).
-    • Newest semver-shaped git tag (any repo that's been
+    - Newest semver-shaped git tag (any repo that's been
       released at least once, regardless of language/stack —
       Go CLIs, shell projects, anything).
-    • Empty when neither is available — Tag/Title open blank
+    - Empty when neither is available — Tag/Title open blank
       and a hint asks you to fill them in.
 - The dialog title, Tag, Title, ReleaseNotes section lookup,
   and the asset filename-mismatch warning now all key off
@@ -351,9 +396,8 @@ repo's own version and pre-fills from that.
   error) moved into the footer too so it stays visible
   during long uploads.
 
+## Version 0.9.2 - May 25, 2026
 
-Version 0.9.2 - May 25, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Release publishing now reaches GitHub Enterprise Server (GHES) in
 addition to github.com. The v0.9.0 dialog was hard-scoped to
 github.com because that's all `gh` officially advertised; in practice
@@ -361,8 +405,8 @@ github.com because that's all `gh` officially advertised; in practice
 so the dialog now picks up any GHES remote `gh` knows about and
 routes the release there.
 
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Release… now publishes to GitHub Enterprise Server — if your
   repo has a remote pointing at a GHES instance (e.g.
   git@your-ghes-host:owner/repo.git) and you've authenticated
@@ -370,44 +414,44 @@ routes the release there.
   rest of the dialog — tag, title, notes auto-extraction, asset
   discovery, pre-release / draft, overwrite-confirm — behaves
   identically to the github.com path.
-    • Host selection rule: if a repo has both a github.com remote
+    - Host selection rule: if a repo has both a github.com remote
       and a GHES remote, github.com wins (matches the "public
       release goes to the public mirror" intuition). With only a
       GHES remote, GHES is used.
-    • GHES detection: the dialog asks `gh auth status --hostname
+    - GHES detection: the dialog asks `gh auth status --hostname
       <host>` for each non-github.com remote and accepts the
       first host gh reports as logged in. gh's own auth state is
       the source of truth — no separate config in this app.
-    • Dialog feedback: the Repo row shows `host/owner/repo` when
+    - Dialog feedback: the Repo row shows `host/owner/repo` when
       the host isn't github.com, so it's visually obvious which
       instance the release will land on. The overwrite-confirm
       dialog and the success message now show the real host too.
-    • "Open release on GitHub" button still works — the synthesised
+    - "Open release on GitHub" button still works — the synthesised
       release URL uses the actual host instead of always saying
       github.com.
-    • Auth-failure errors now include the exact command to run,
+    - Auth-failure errors now include the exact command to run,
       e.g. `gh auth login --hostname git.corp.MYORG.com`, so the
       fix is copy-pasteable.
 
-🛠 ONE-TIME SETUP FOR GHES (per machine, per host)
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🛠 ONE-TIME SETUP FOR GHES (per machine, per host)
+
 If you've never published a release from this machine to your
 GHES instance before, do this once:
 
   1. Create a Personal Access Token (PAT) in the GHES web UI:
-     • Open your GHES instance in a browser → click your avatar
+     - Open your GHES instance in a browser → click your avatar
        → Settings → Developer settings → Personal access tokens
        → Tokens (classic) → Generate new token.
-     • Scopes required for Release publishing:
+     - Scopes required for Release publishing:
          - `repo`            (read + write repo contents, create
                               releases, upload release assets)
        Optional, only if you also want gh to drive other things:
          - `workflow`        (trigger / read GitHub Actions)
          - `read:org`        (list org repos for `gh repo list`)
-     • Set an expiry that matches your team's policy (90 days is
+     - Set an expiry that matches your team's policy (90 days is
        a common default; longer means fewer re-auths but more
        blast radius if the token leaks).
-     • Copy the token (you only see it once).
+     - Copy the token (you only see it once).
 
   2. If your GHES org has SAML SSO enforced, click "Configure
      SSO" / "Authorize" next to the new token in the PAT list
@@ -417,17 +461,17 @@ GHES instance before, do this once:
      itself is valid.
 
   3. Tell `gh` about the host:
-        gh auth login --hostname <your-ghes-host>
+        `gh auth login --hostname <your-ghes-host>`
      Choose:
-        • HTTPS as the protocol
-        • "Paste an authentication token" when prompted
-        • Paste the PAT from step 1
+        - HTTPS as the protocol
+        - "Paste an authentication token" when prompted
+        - Paste the PAT from step 1
      (Or, if your GHES has device-flow enabled, pick "Login with
      a web browser" instead of pasting.)
 
   4. Verify the wiring with two read-only checks:
-        gh auth status --hostname <your-ghes-host>
-        gh release list --repo <your-ghes-host>/<owner>/<repo>
+        `gh auth status --hostname <your-ghes-host>`
+        `gh release list --repo <your-ghes-host>/<owner>/<repo>`
      The first should say "Logged in to <host> account <you>";
      the second should return either an empty list or your
      existing releases without error. If both succeed, the
@@ -439,8 +483,8 @@ GHES instance before, do this once:
      resolve host", check your VPN before assuming the auth is
      broken.
 
-🔧 IMPROVEMENTS
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🔧 IMPROVEMENTS
+
 - Auth-error messages now include the host that failed, so when
   you have credentials for multiple GitHub hosts (github.com +
   one or more GHES instances) it's clear which one needs
@@ -453,12 +497,12 @@ GHES instance before, do this once:
   v0.9.0 "github.com-only" wording was already stale by the time
   it was committed.
 
-Version 0.9.1 - May 23, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Version 0.9.1 - May 23, 2026
+
 Minor update for repo release button improvement, disable after successful release
 
-Version 0.9.0 - May 22, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Version 0.9.0 - May 22, 2026
+
 Release publishing arrives — the last piece of the
 edit→commit→push→release loop. Compiling stays where it is (your
 existing scripts produce bin/* and installers/*); the new dialog
@@ -467,16 +511,16 @@ and the current appVersion, and turns them into a published GitHub
 release via the gh CLI. No more dragging files into github.com's
 release composer.
 
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Release… — new Repo ▾ → Release… (also on the File menu).
   Composes and publishes a GitHub release for the current
   appVersion in one dialog:
-    • Tag, Title, and Target prefilled — tag is v<appVersion>,
+    - Tag, Title, and Target prefilled — tag is v<appVersion>,
       title is "v<version> - <today's date>", target shows the
       short HEAD SHA + commit subject so you can confirm you're
       tagging the right commit. Tag and title are editable.
-    • Release notes auto-extracted from ReleaseNotes.txt — the
+    - Release notes auto-extracted from ReleaseNotes.txt — the
       dialog scans for the section matching the current
       appVersion, drops the version-header line and the
       decorative ━━━ rule (those go in the tag/title), and
@@ -484,32 +528,32 @@ release composer.
       editor names the source file and version it found —
       handles missing-file and unmatched-version cases by
       opening with an empty notes field and a helpful note.
-    • Assets auto-discovered — every file in bin/ and
+    - Assets auto-discovered — every file in bin/ and
       installers/ (hidden files like .DS_Store skipped) becomes
       a checkbox row showing the path, size, and a filename-
       version-mismatch warning when the file's embedded version
       doesn't match appVersion. All assets default checked;
       uncheck any you want to leave off this release.
-    • Pre-release / Draft checkboxes — both default off.
+    - Pre-release / Draft checkboxes — both default off.
       Pre-release marks the release as non-production on
       GitHub; Draft publishes but holds back from public view so
       you can review on the web before announcing.
-    • Tag-already-exists pre-flight — before publishing, the
+    - Tag-already-exists pre-flight — before publishing, the
       dialog runs `gh release view` against the chosen tag. If
       a release already exists, an overwrite-confirm dialog
       explains the cost (download counts and external links to
       the old release will be lost) and offers Cancel or
       Overwrite. Overwrite deletes the old release + tag via
       `gh release delete --cleanup-tag` then re-creates fresh.
-    • Publishes via `gh release create <tag> <files…>
+    - Publishes via `gh release create <tag> <files…>
       --title --notes-file --prerelease? --draft?` with an
       explicit `--repo` flag derived from the first github.com
       remote configured for the repo (so multi-remote repos pick
       the right one without relying on gh's auto-detection).
-    • Notes go through a tempfile (`--notes-file`) not a shell
+    - Notes go through a tempfile (`--notes-file`) not a shell
       argument, so multi-line content with quotes / backticks /
       box-drawing characters survives intact.
-    • Success path surfaces a [Open release on GitHub] button
+    - Success path surfaces a [Open release on GitHub] button
       that takes you to the new release page. Failure path
       surfaces gh's verbatim output for diagnosis.
 
@@ -519,9 +563,8 @@ release composer.
   (install from https://cli.github.com/) or not authenticated
   (run `gh auth login`).
 
+## Version 0.8.0 - May 22, 2026
 
-Version 0.8.0 - May 22, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Phase 7 lands — full set of basic git management actions. The
 explorer was emphatically pure-read-only through v0.5/0.6/0.7
 (Branches / Tags / Remotes / Reflog / Stashes / Contributors / Repo
@@ -535,8 +578,8 @@ rescue row offering pull-first or force-with-lease), and pull (with a
 per-pull rebase-vs-merge override). Heavier operations (clone, branch,
 merge) remain deferred — VS Code + the CLI already cover them well.
 
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Repo ▾ toolbar dropdown — new button next to View ▾ holding the
   full Phase 7 surface: Commit…, Initialize Repository Here…, Local
   Repo Identity…, Manage Remotes…, Pull…, Push…. Stays enabled
@@ -549,15 +592,15 @@ merge) remain deferred — VS Code + the CLI already cover them well.
 - Initialize Repository Here… — confirms before creating .git, with
   one configurable field: "Initial branch" pre-seeded from your
   global init.defaultBranch (falling back to `master` if unset).
-    • Per-project branch names from the dialog land instantly via
+    - Per-project branch names from the dialog land instantly via
       go-git's PlainInitWithOptions(DefaultBranch) — no need for
       the manual `git branch -M <name>` step after init.
-    • Existing files in the folder are not touched — only a .git
+    - Existing files in the folder are not touched — only a .git
       directory is created alongside them. The explorer auto-
       rebinds to the new repo (rerun of DetectDotGit via
       loadFolder); the header repaints with the branch +
       clean/dirty counts immediately.
-    • Minimal branch-name validation up front; anything subtler
+    - Minimal branch-name validation up front; anything subtler
       that git itself refuses surfaces in a follow-up error
       dialog with git's own message.
 
@@ -572,25 +615,25 @@ merge) remain deferred — VS Code + the CLI already cover them well.
 - Manage Remotes… — list of configured remotes with Add / Edit /
   Remove buttons. The Add/Edit sub-dialog has a single canonical
   URL field plus two helpers:
-    • HTTPS ⇄ SSH flip button — appears when the URL is in a
+    - HTTPS ⇄ SSH flip button — appears when the URL is in a
       parseable canonical form (https://host/owner/repo[.git] ⇄
       git@host:owner/repo[.git]); pure URL-shape transformation,
       no baked-in host knowledge.
-    • Build URL from host + path… — small sub-dialog that
+    - Build URL from host + path… — small sub-dialog that
       constructs a URL from Host + Path + Scheme inputs. Scheme
       "Auto-detect" fires both HTTPS and SSH `git ls-remote
       --heads` probes in parallel (5s timeout each), picks the
       working scheme, prefers SSH on ties. Generalised — works
       for any host that uses github-style URL conventions.
-    • Test Connection button on the main dialog — runs a probe
+    - Test Connection button on the main dialog — runs a probe
       against the URL field; on failure offers a one-click
       retry against the converted form.
 
 - Commit… — multi-line message field with two ergonomic
   extensions both off by default:
-    • Stage all changes before committing (git add -A) — saves
+    - Stage all changes before committing (git add -A) — saves
       clicks for the common "commit everything" case.
-    • Amend last commit — pre-fills the message field from
+    - Amend last commit — pre-fills the message field from
       HEAD's message so you can edit-in-place; blank message
       uses --amend --no-edit to preserve the prior message.
       Disabled when HEAD is unborn (no commits to amend yet).
@@ -609,13 +652,13 @@ merge) remain deferred — VS Code + the CLI already cover them well.
   Resolved URL (what git actually uses after any
   url.<base>.insteadof rewrites). Remote dropdown defaults to the
   branch's upstream remote when one exists.
-    • "Also set as upstream for this branch" checkbox —
+    - "Also set as upstream for this branch" checkbox —
       auto-shown + ticked when no upstream exists, hidden when
       one is configured. First push auto-wires tracking.
-    • Dialog stays open during the push so git's progress output
+    - Dialog stays open during the push so git's progress output
       is readable; on failure the full git stderr is rendered
       verbatim in the status area.
-    • Pre-flight catches the unborn-HEAD case (branch ref
+    - Pre-flight catches the unborn-HEAD case (branch ref
       doesn't exist yet because no commits were made) with a
       friendlier prompt than git's cryptic "src refspec X does
       not match any" — offers to open the Commit dialog
@@ -625,16 +668,16 @@ merge) remain deferred — VS Code + the CLI already cover them well.
   triggers GitHub's "GitHub found N vulnerabilities" remote-side
   message, an inline alert row appears in the Push dialog with the
   count and severity breakdown plus three buttons:
-    • Open Dependabot alerts — opens the security/dependabot
+    - Open Dependabot alerts — opens the security/dependabot
       page in your default browser.
-    • Fetch alert details — runs `gh api
+    - Fetch alert details — runs `gh api
       repos/<owner>/<repo>/dependabot/alerts?state=open` and
       renders the results in a dedicated dialog. Each alert
       shows severity badge, package + ecosystem +
       direct/transitive, advisory summary, vulnerable range,
       fixed-in version, CVE + GHSA identifiers. Sorted
       critical → high → moderate → low.
-    • Re-run local dep-scan — fires the existing v0.3.0 Scan
+    - Re-run local dep-scan — fires the existing v0.3.0 Scan
       Dependencies action for a side-by-side comparison with
       govulncheck + osv-scanner (which often disagrees with
       Dependabot since govulncheck does reachability analysis
@@ -661,9 +704,9 @@ merge) remain deferred — VS Code + the CLI already cover them well.
   pushed → pull first; you amended a commit that was already
   pushed → force-with-lease) and offering both actions as
   one-click buttons:
-    • Pull first — opens the Pull dialog so you can integrate
+    - Pull first — opens the Pull dialog so you can integrate
       remote changes before retrying.
-    • Force push (--force-with-lease) — confirms (with explicit
+    - Force push (--force-with-lease) — confirms (with explicit
       explanation of what the lease does and doesn't protect
       against) then re-runs the push with --force-with-lease.
       Styled with DangerImportance so it reads as the heavier
@@ -673,21 +716,21 @@ merge) remain deferred — VS Code + the CLI already cover them well.
   Refuses to open with a friendly hint pointing at Push when no
   upstream is configured. Shows current branch, upstream, and
   resolved URL.
-    • "Rebase instead of merge (--rebase)" checkbox —
+    - "Rebase instead of merge (--rebase)" checkbox —
       pre-seeded from your `pull.rebase` config so it honours
       your existing preference, overridable per-pull. Runs
       git pull with an explicit --rebase / --no-rebase so the
       checkbox always wins.
-    • Dialog stays open during the operation so the merge or
+    - Dialog stays open during the operation so the merge or
       rebase summary (and any conflict messages) is readable
       verbatim. Conflict resolution stays in your editor / CLI
       — there's no in-app resolver, by design.
-    • On success the explorer refreshes so the file list,
+    - On success the explorer refreshes so the file list,
       header counts, and remote-sync indicator all reflect the
       new HEAD.
 
-🔧 CHANGED
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🔧 CHANGED
+
 - File menu reshuffle — new separator-bounded section between
   Refresh and Compare Two Files… holds the Phase 7 actions
   (Commit…, Initialize Repository Here…, Local Repo Identity…,
@@ -696,51 +739,49 @@ merge) remain deferred — VS Code + the CLI already cover them well.
   prefer the menu route, with disable-state that follows the
   current folder's repo status.
 
+## Version 0.7.1 - May 20, 2026
 
-Version 0.7.1 - May 20, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Repo Config view — new View ▾ → Repo Config… (also on the menu
   bar View menu and the tray) opens a read-only listing of the
   current repo's local git config: every key/value pair from
   .git/config (and any files git resolves via include /
   includeIf directives), sorted alphabetically by key. Two
   columns: Key | Value.
-    • Shells out to `git -C <repo> config --local --list` so the
+    - Shells out to `git -C <repo> config --local --list` so the
       output matches exactly what you'd see on the CLI.
-    • Local-only by design: ~/.gitconfig (global) and system
+    - Local-only by design: ~/.gitconfig (global) and system
       config are deliberately excluded. A small italic note above
       the list spells this out so a missing user.name doesn't
       read as a bug when it's set only globally.
-    • Pure read-only — no edit / unset affordance, same line in
+    - Pure read-only — no edit / unset affordance, same line in
       the sand as the existing Branches / Tags / Remotes
       listings.
 
+## Version 0.7.0 - May 19, 2026
 
-Version 0.7.0 - May 19, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Signed-commit badges in Repo History — each commit row in the
   Repo History window now shows a small left-gutter glyph for the
   commit's signature status:
-    • ✓ valid signature
-    • ✗ bad / expired / revoked
-    • ? signed-but-unverifiable-on-this-machine (signer's public
+    - ✓ valid signature
+    - ✗ bad / expired / revoked
+    - ? signed-but-unverifiable-on-this-machine (signer's public
       key isn't in your local keyring)
-    • blank for unsigned
+    - blank for unsigned
   The detail pane gets a matching italic "Signature: …" line
   between the header and the commit message.
-    • Built on `git log --format=%G?` so it uses your local
+    - Built on `git log --format=%G?` so it uses your local
       GPG/SSH configuration. To turn a ? into a ✓ for a commit
       you trust, import the signer's public key — e.g.
       `gpg --recv-keys <keyid>` or via your existing keyserver
       workflow.
-    • Loaded asynchronously in the background — the window
+    - Loaded asynchronously in the background — the window
       opens immediately; badges populate when the git log walk
       completes (typically <1s, a few seconds on huge repos).
-    • Graceful degrade — if `git` isn't on PATH the history
+    - Graceful degrade — if `git` isn't on PATH the history
       window still works, just without badges. Scoped to Repo
       History; Blame's gutter stays uncluttered.
 
@@ -750,15 +791,15 @@ Version 0.7.0 - May 19, 2026
   HEAD@{N} · date · action (commit / checkout / reset / rebase
   / ...) · message in the left pane, the selected entry's commit
   detail + file list in the right pane.
-    • Click any file in the right pane → opens a Historical
+    - Click any file in the right pane → opens a Historical
       Diff (file at that commit vs its parent, both sides
       read-only). Same flow as Repo History's detail pane.
-    • Works for unreachable commits — reflog entries that
+    - Works for unreachable commits — reflog entries that
       point at commits no longer in the regular log (after a
       hard reset or rebase) still resolve, because the reflog
       itself keeps the commit objects alive. Useful for
       "I rebased and lost something" recovery scenarios.
-    • Shells out to `git -C <repo> reflog --date=iso
+    - Shells out to `git -C <repo> reflog --date=iso
       --format=…` and parses with NULL-byte field separators so
       subject text with `:` or `|` doesn't trip the parser.
 
@@ -768,26 +809,26 @@ Version 0.7.0 - May 19, 2026
   last had it open, the banner reads:
       "7 new commits since you last opened this repo (since
        abc1234)."   [Compare] [Dismiss]
-    • Compare opens Repo History with the stored marker
+    - Compare opens Repo History with the stored marker
       pre-set as the compare base — one click to see the diff
       between last visit and now, file-by-file.
-    • Dismiss hides the banner and advances the marker so it
+    - Dismiss hides the banner and advances the marker so it
       doesn't re-appear unless real new commits land.
-    • Per-repo marker, persisted via Fyne preferences (key
+    - Per-repo marker, persisted via Fyne preferences (key
       "lastSeenHead:<repoRoot>" → SHA, ~50 bytes per repo).
       First visit to a repo silently captures the marker — no
       banner the very first time, only when something has
       changed between visits.
-    • Marker advances on: Dismiss, Compare, cross-repo
+    - Marker advances on: Dismiss, Compare, cross-repo
       navigation, window close, Quit. Closing the explorer
       counts as implicit acknowledgement of whatever state was
       on screen.
-    • Force-push / pruned / behind-marker edge cases: silently
+    - Force-push / pruned / behind-marker edge cases: silently
       re-anchor to current HEAD and skip the banner — the
       chain broke, so the explorer just moves on.
 
-🔧 CHANGED
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🔧 CHANGED
+
 - Documented `git` CLI prerequisite — README and the in-app
   Help window now carry a dedicated Requirements section
   calling out that several operations shell out to the system
@@ -798,30 +839,29 @@ Version 0.7.0 - May 19, 2026
   just makes it explicit so users installing v0.7.0 binaries
   know what they need on PATH.
 
+## Version 0.6.0 - May 17, 2026
 
-Version 0.6.0 - May 17, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Blame viewer — right-click a tracked file → "Blame…" (or use the
   new View ▾ toolbar dropdown) opens a per-line annotated view of the
   file at HEAD. Each row shows line number · short SHA · YYYY-MM-DD ·
   author · code in a monospaced layout so the gutter columns line up.
   Built on go-git's Blame().
-    • Async compute — go-git walks the commit graph to attribute each
+    - Async compute — go-git walks the commit graph to attribute each
       line, which can take a few seconds on long-lived files. A
       "Hide (continues in background)" progress dialog appears while
       it runs; the window opens when blame completes.
-    • Click any row → opens a Historical Diff for that file at the
+    - Click any row → opens a Historical Diff for that file at the
       blame commit vs its parent, both sides read-only. Closes the
       loop with the existing history-detail flow: blame becomes the
       natural entry point into "what changed on this line and why".
-    • Same enable rule as Diff against HEAD — the file must be
+    - Same enable rule as Diff against HEAD — the file must be
       tracked and already committed at least once. Untracked /
       ignored / freshly-added-staged rows have no Blame… menu entry,
       and the View ▾ dropdown's Blame… item is disabled when no
       eligible file is selected.
-    • Window title reads "Blame: <repo> — <relative-path>" so a
+    - Window title reads "Blame: <repo> — <relative-path>" so a
       per-file blame stays distinguishable from another open on a
       different file. Long source lines truncate with an ellipsis;
       click-through to the historical diff for the full content.
@@ -831,10 +871,10 @@ Version 0.6.0 - May 17, 2026
   Contributors…, Git Status Legend…, Remotes…, Repo Health…, Repo
   History…, Stashes…, Tags…. Alphabetised. Same handlers as the View
   menu and tray; disabled when no repo is loaded.
-    • Curated to data views only — Scan Dependencies, Compare Two
+    - Curated to data views only — Scan Dependencies, Compare Two
       Files, Preferences, theme toggles, navigation actions stay out
       (they have their own toolbar buttons or live elsewhere).
-    • Blame… in this dropdown is enabled only when a tracked,
+    - Blame… in this dropdown is enabled only when a tracked,
       already-committed file is selected in the folder list — the
       right-click context menu remains the primary entry point.
 
@@ -845,8 +885,8 @@ Version 0.6.0 - May 17, 2026
   curating the View ▾ button: the diff tool GitExplorer grew out of
   was easy to forget about because it was menu-only.
 
-🔧 CHANGED
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🔧 CHANGED
+
 - Menu items alphabetised throughout — main menu bar (File / Edit /
   View / Help), system tray menu, and the right-click row context
   menu now order items alphabetically within each separator-bounded
@@ -869,10 +909,10 @@ Version 0.6.0 - May 17, 2026
   Health…, Repo History…, Stashes…, Tags…) below it. Easier to find
   one or the other without scanning the whole list.
 
-Version 0.5.0 - May 16, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+## Version 0.5.0 - May 16, 2026
+
+### ✨ NEW
+
 - Directory-level rolled-up status — folder rows now show a summary
   like "modified (5)" when their subtree contains non-clean files,
   filling in the last big "Known gap" of v0.4.0. The count is the
@@ -880,20 +920,20 @@ Version 0.5.0 - May 16, 2026
   is the highest-severity one present (conflict > modified >
   untracked). Visible in both the folder view's Status column and the
   tracked-files tree's branch labels (e.g. "src/   [modified (5)]").
-    • The filter bar's "Only dirty / Only untracked" toggles now use
+    - The filter bar's "Only dirty / Only untracked" toggles now use
       the rollup to filter directories too — ticking "Only dirty"
       collapses the view to just the folders with dirty content
       anywhere inside, not all directories. Much more useful as a
       "what needs my attention?" filter.
-    • Submodule rows are treated as opaque (a separate repo) and
+    - Submodule rows are treated as opaque (a separate repo) and
       always pass the dirty/untracked gates so you can drill in; the
       submodule itself reports its own rollup once you enter it.
-    • Ignored files are deliberately excluded from the rollup —
+    - Ignored files are deliberately excluded from the rollup —
       go-git's Status() doesn't enumerate them, and walking the
       gitignore matcher recursively for every directory listing would
       slow things down on large repos. The existing file-level "Only
       ignored" filter already covers .gitignore auditing.
-    • Existing labels — submodule, ignored — still win over the
+    - Existing labels — submodule, ignored — still win over the
       rollup since they describe what the directory *is*, not just
       what's inside.
 
@@ -904,10 +944,10 @@ Version 0.5.0 - May 16, 2026
   the existing "Search across history" (message + author) layers on
   top of the file filter, so e.g. "files I touched in commits
   mentioning auth" is one query.
-    • Window title reads "File History: <repo> — <path>" so a
+    - Window title reads "File History: <repo> — <path>" so a
       file-scoped history is distinguishable from a general one
       sitting on another monitor.
-    • An italic indicator row at the top of the left pane reads
+    - An italic indicator row at the top of the left pane reads
       "File history: <path>" with a toggle button. Click "Show all
       history" to broaden back to the full repo log without closing
       the window; the file is remembered as a breadcrumb ("Last
@@ -915,31 +955,31 @@ Version 0.5.0 - May 16, 2026
       so one more click returns you to the file-scoped view. Message
       / author search fields are cleared on each transition so each
       view lands in a clean state.
-    • Same enable rule as Diff against HEAD: the file must be tracked
+    - Same enable rule as Diff against HEAD: the file must be tracked
       and already committed at least once (no menu entry for
       untracked, ignored, or freshly-added-staged files).
 
 - Compare any two commits — answers "what changed between v1.0 and
   v1.5?" without leaving the GUI. In the Repo History window:
-    • Click a commit, then click the new "Pick as compare base"
+    - Click a commit, then click the new "Pick as compare base"
       button in the detail-pane header (checkmark icon, medium
       importance so it reads as a button not a chip). A banner
       appears above the commit list: "Compare base: <SHA> —
       <subject>  [Cancel compare]".
-    • Click any other commit → the right pane switches to
+    - Click any other commit → the right pane switches to
       "Compare: <baseSHA> → <selectedSHA>" mode, showing the files
       changed between the two commits (not selected-vs-parent).
-    • Click a file in compare mode → opens a Historical Diff between
+    - Click a file in compare mode → opens a Historical Diff between
       the two arbitrary commits, both sides read-only. Pane labels
       use SHA + date + commit subject so parallel compares stay
       self-identifying.
-    • Diff window auto-follows the selection — once you've opened a
+    - Diff window auto-follows the selection — once you've opened a
       diff for some file, switching to another commit (in compare
       mode) reopens the diff for the same file at the new compare
       pair. Effectively "scrub" the file through history. Driven by
       the existing "Keep only one diff window" preference; if you
       close the diff window manually it stays closed.
-    • Pick a new base anytime to swap; Cancel returns the right pane
+    - Pick a new base anytime to swap; Cancel returns the right pane
       to ordinary per-commit detail. Compare mode composes cleanly
       with both the file-history filter and the message/author
       search — the base commit survives across re-filters, and the
@@ -954,15 +994,15 @@ Version 0.5.0 - May 16, 2026
   without you hitting Cmd/Ctrl+R. Preferences → Explorer → "Auto-
   refresh when files change outside the app" (default on); flip
   off to stick with manual refresh.
-    • Events are debounced ~250ms so a single $EDITOR save (which
+    - Events are debounced ~250ms so a single $EDITOR save (which
       typically fires multiple CREATE/RENAME/WRITE events for swap
       + temp + final) coalesces into one refresh.
-    • Watching is non-recursive — just the visible folder + the
+    - Watching is non-recursive — just the visible folder + the
       repo's index file, not the entire worktree. That keeps watch
       handle counts bounded on large repos without losing the most
       useful signal. Changes deep inside a subdirectory still need
       a manual Refresh.
-    • The watcher restarts on folder change (re-points at the new
+    - The watcher restarts on folder change (re-points at the new
       currentPath / repo root), tears down on window close, and
       restarts if you toggle the preference without needing a
       folder reload.
@@ -1003,15 +1043,15 @@ Version 0.5.0 - May 16, 2026
 - Right-click menu rounds out lifecycle ops for untracked / ignored
   files. The folder-view context menu now offers, alongside the
   existing Diff / History / git rm entries:
-    • git add (start tracking)… — stages an untracked file via
+    - git add (start tracking)… — stages an untracked file via
       go-git's wt.Add; the file shows up as "added (staged)" on
       the next refresh.
-    • Add to .gitignore… — appends a leading-slash anchored entry
+    - Add to .gitignore… — appends a leading-slash anchored entry
       (e.g. "/path/to/file.txt") to the repo's root .gitignore,
       creating the file if it didn't exist. Anchored on purpose
       so it matches just that exact path, not every file of that
       name anywhere in the tree.
-    • Un-ignore (allow tracking)… — symmetric counterpart for
+    - Un-ignore (allow tracking)… — symmetric counterpart for
       currently-ignored files. If .gitignore has an exact-match
       line for this file, that line is removed (clean undo when
       the file was ignored via the menu item above). Otherwise
@@ -1021,7 +1061,7 @@ Version 0.5.0 - May 16, 2026
       this one file without disturbing the broader pattern. The
       confirm dialog tells you which path will be taken before
       the .gitignore edit happens.
-    • Delete from disk… — removes the file from the filesystem
+    - Delete from disk… — removes the file from the filesystem
       via os.Remove, with a clear "this can't be undone" confirm.
       Only offered for untracked or ignored files (tracked files
       have git rm), and only for files, not directories — recursive
@@ -1046,11 +1086,11 @@ Version 0.5.0 - May 16, 2026
 - Remote-sync indicator in the explorer's repo header — alongside
   "Branch: …  •  clean: N, dirty/untracked: M" you now see one
   of:
-    • "in sync with origin/<branch> ✓"
-    • "↑N vs origin/<branch>"  /  "↓M …"  /  "↑N ↓M …"
-    • "no upstream" (branch has no tracking config)
-    • "(no remotes)" (repo has no remotes at all)
-    • "… — remote unreachable" (live ls-remote check failed)
+    - "in sync with origin/<branch> ✓"
+    - "↑N vs origin/<branch>"  /  "↓M …"  /  "↑N ↓M …"
+    - "no upstream" (branch has no tracking config)
+    - "(no remotes)" (repo has no remotes at all)
+    - "… — remote unreachable" (live ls-remote check failed)
   The ahead/behind counts are read from cached refs (no network),
   computed via `git rev-list --left-right --count @{upstream}...HEAD`
   — instant. Asynchronously, a `git ls-remote --heads <remote>`
@@ -1062,11 +1102,10 @@ Version 0.5.0 - May 16, 2026
   repo it was probing, so a stale check can't stomp on the
   freshly-rendered indicator for a different folder.
 
+## Version 0.4.0 - May 15, 2026
 
-Version 0.4.0 - May 15, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - "Recent ▾" toolbar button next to Open Folder. Pops up the same
   recent-folders list as File → Open Recent Folder, anchored just below
   the button — one click to jump between the 2-3 projects you're
@@ -1078,17 +1117,17 @@ Version 0.4.0 - May 15, 2026
   ignored", "Show ignored". Applies to both the folder view and the
   tracked-files tree. Filters reset on folder change so each project
   starts from a clean slate.
-    • Name filter is case-insensitive substring match on the file's
+    - Name filter is case-insensitive substring match on the file's
       short name. In the tracked-files tree, a directory whose name
       matches pulls in all its descendants so you can drill in.
-    • Only dirty / Only untracked / Only ignored combine as an OR-union
+    - Only dirty / Only untracked / Only ignored combine as an OR-union
       when more than one is checked (e.g. checking dirty + ignored
       shows both classes side by side).
-    • "Only ignored" implicitly bypasses the "Show ignored" gate so
+    - "Only ignored" implicitly bypasses the "Show ignored" gate so
       auditing .gitignore is a single click: tick "Only ignored" and
       the view collapses to just the ignored set — handy for spotting
       files that shouldn't be ignored.
-    • Directories and the .git pinned row always pass the status gate
+    - Directories and the .git pinned row always pass the status gate
       so you can keep navigating; the name filter still applies to them.
       (Directory rollup is a separate future-ideas item.)
 
@@ -1110,16 +1149,16 @@ Version 0.4.0 - May 15, 2026
   case-insensitive substring matches; the message field searches the
   full commit message (subject + body), the author field searches the
   author name.
-    • First time you type a query, the iterator drains the full repo
+    - First time you type a query, the iterator drains the full repo
       log into memory so matching is across all commits, not just the
       currently-loaded page.
-    • "Load more commits" is disabled while a filter is active (all
+    - "Load more commits" is disabled while a filter is active (all
       commits are already loaded).
-    • Header switches from "N commits loaded" to "N of M commits
+    - Header switches from "N commits loaded" to "N of M commits
       match" so you can see how aggressive the filter is.
-    • Typing is debounced ~150ms so a long query doesn't re-walk on
+    - Typing is debounced ~150ms so a long query doesn't re-walk on
       every character.
-    • Clear both fields to return to the unfiltered list.
+    - Clear both fields to return to the unfiltered list.
 
 - Submodule indicator + recursive open — directories declared as
   submodules in .gitmodules now show "submodule" in the Status column.
@@ -1136,12 +1175,12 @@ Version 0.4.0 - May 15, 2026
   to a different repo (or out of a repo entirely) while repo-bound
   secondary windows are still open, a modal dialog now lists those
   windows by title and asks what to do:
-    • Close them and continue (default, recommended) — fires Close()
+    - Close them and continue (default, recommended) — fires Close()
       on every registered window so they tear down cleanly via their
       own intercepts.
-    • Keep them open and continue — proceeds with the switch; you
+    - Keep them open and continue — proceeds with the switch; you
       knowingly accept the mixed-repo state.
-    • Cancel — abandons the switch; the explorer stays where it is.
+    - Cancel — abandons the switch; the explorer stays where it is.
   Tracked as repo-bound: Repo History, Diff vs HEAD, Historical Diff.
   Compare Two Files… (legacy two-file diff) is deliberately excluded
   since it's repo-independent. Repo Health, Scan Dependencies, the
@@ -1151,10 +1190,10 @@ Version 0.4.0 - May 15, 2026
   etc.) doesn't trigger the prompt — only crossing a repo-root
   boundary does.
 
-Version 0.3.0 - May 15, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+## Version 0.3.0 - May 15, 2026
+
+### ✨ NEW
+
 - Repo History view — secondary window opened via View → Repo History… or
   the new History toolbar button next to "Tracked files". Two-pane layout:
   commit list on the left (subject + short-sha · author · relative time),
@@ -1221,8 +1260,8 @@ Version 0.3.0 - May 15, 2026
   level skill install. Works on any folder, not just git repos — dep-
   scan walks for manifests across multiple ecosystems.
 
-🔧 IMPROVEMENTS
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🔧 IMPROVEMENTS
+
 - Symmetric read-only enforcement across Swap. Swapping sides in a Diff vs
   HEAD or Historical Diff keeps the read-only state attached to the
   immutable content; left/right now have independent leftReadOnly +
@@ -1236,8 +1275,8 @@ Version 0.3.0 - May 15, 2026
 - Explorer's tray menu now includes Repo History… and Git Status Legend…
   alongside the existing entries for parity with the menu bar.
 
-🐛 BUGS / FIXES
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🐛 BUGS / FIXES
+
 - Secondary diff windows no longer hijack the explorer's menu bar.
   Previously on macOS, opening any diff from the explorer replaced the
   app-wide menu and never restored it after the diff was closed (Fyne's
@@ -1245,19 +1284,18 @@ Version 0.3.0 - May 15, 2026
   diff window's controls remain available via toolbar, right-click row
   menu, and keyboard shortcuts.
 
+## Version 0.2.0 - May 15, 2026
 
-Version 0.2.0 - May 15, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ NEW
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW
+
 - Right-click context menu on each folder-view row:
-    • Reveal in Finder / Explorer / file manager (cross-platform).
-    • Copy path (absolute path to the clipboard).
-    • Open in $EDITOR (honours $VISUAL, then $EDITOR; falls back to the
+    - Reveal in Finder / Explorer / file manager (cross-platform).
+    - Copy path (absolute path to the clipboard).
+    - Open in $EDITOR (honours $VISUAL, then $EDITOR; falls back to the
       OS' default open command).
-    • Diff against HEAD… (see below).
-    • git rm -f — remove from worktree + index (via go-git's wt.Remove).
-    • git rm --cached — remove from index only, leaves the file on disk
+    - Diff against HEAD… (see below).
+    - git rm -f — remove from worktree + index (via go-git's wt.Remove).
+    - git rm --cached — remove from index only, leaves the file on disk
       (shells out to `git`; pairs with manually adding a .gitignore entry).
   Items are enabled per-row based on whether the file is tracked,
   untracked, ignored, a directory, or .git.
@@ -1275,8 +1313,8 @@ Version 0.2.0 - May 15, 2026
   dialog as the diff window; works against app prefs whether or not a
   diff window is open.
 
-🔧 IMPROVEMENTS
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🔧 IMPROVEMENTS
+
 - Up button in the tracked-files view returns to the worktree view of
   the same folder (one logical level back) instead of walking out of
   the repo entirely. Tooltip changes between modes to reflect this.
@@ -1292,8 +1330,8 @@ Version 0.2.0 - May 15, 2026
   that set. Dialogs the user already dismissed before Hide All stay
   dismissed through the round-trip.
 
-🐛 BUGS / FIXES
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🐛 BUGS / FIXES
+
 - Update checker repointed at github.com/amarillier/KrankyBearGitExplorer.
   (Was still hitting the KrankyBearDiff repo and showing the wrong
   "latest version".)
@@ -1316,8 +1354,8 @@ Version 0.2.0 - May 15, 2026
   256×256"); winres.json now points at the 64×64 and 256×256 sources
   so go-winres produces a proper multi-resolution group icon.
 
-🏗️ INTERNALS
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🏗️ INTERNALS
+
 - Repo-wide rebrand sweep — build scripts, sync scripts, packaging
   metadata, binary names (kbdiff* → kbgitexplorer*), Linux package
   name (krankybear-diff → krankybear-gitexplorer), macOS .app bundle
@@ -1330,11 +1368,10 @@ Version 0.2.0 - May 15, 2026
   setupMenus accepts setTray so secondary diff windows don't clobber
   the explorer's system tray.
 
+## Version 0.1.0 - May 13, 2026
 
-Version 0.1.0 - May 13, 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ NEW (fork of KrankyBearDiff repurposed as a git repository explorer)
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### ✨ NEW (fork of KrankyBearDiff repurposed as a git repository explorer)
+
 - Explorer main window: open a folder by file picker, drag-and-drop, or
   Cmd/Ctrl+O. Shows Name / Size / Modified / Status columns for the contents
   of the current folder.
@@ -1352,8 +1389,8 @@ Version 0.1.0 - May 13, 2026
   its containing folder).
 - Cross-platform: macOS 10.13+, Windows 10+, Linux (X11 / Wayland).
 
-🧰 PRESERVED FROM KRANKYBEARDIFF
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🧰 PRESERVED FROM KRANKYBEARDIFF
+
 - Two-pane side-by-side diff with sync-scroll, line-numbers toggle, visible
   whitespace, row-level merge actions, undo/redo, unified-patch export, and
   recent-files lists — now reachable from File → Compare Two Files…
@@ -1361,16 +1398,16 @@ Version 0.1.0 - May 13, 2026
 - Fyne menu bar, system tray (Show/Hide windows, theme switcher, help, about,
   updates, quit).
 
-🪟 WINDOW BEHAVIOUR
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🪟 WINDOW BEHAVIOUR
+
 - Hide All Windows snapshots which windows are visible and hides only those;
   Show All Windows restores exactly that snapshot. Dialogs you'd already
   dismissed stay dismissed through a hide/show round-trip.
 - Default launch size 825×600 (reduced from 1100×800); persisted size via
   Preferences if enabled.
 
-🎨 BRANDING
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+### 🎨 BRANDING
+
 - New "KrankyBearNerd" icon throughout (window, tray, dialogs, installer).
 - Bundle / app ID unified at com.github.amarillier.KrankyBearGitExplorer
   across Go appID, FyneApp.toml, Info-plist, and the Windows Inno installer.

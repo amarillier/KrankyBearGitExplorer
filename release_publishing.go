@@ -25,7 +25,7 @@ import (
 //
 // Replaces the manual "go to github → draft a release → drag binaries
 // → click Release" flow with a single dialog that auto-fills tag +
-// title + notes (parsed from ReleaseNotes.txt), auto-discovers assets
+// title + notes (parsed from ReleaseNotes.md/.txt), auto-discovers assets
 // in bin/ + installers/, and uploads via the gh CLI. Works against
 // github.com and GitHub Enterprise Server (GHES) instances — for GHES,
 // the user must have run `gh auth login --hostname <ghes-host>` once
@@ -38,15 +38,20 @@ import (
 var releaseAssetDirs = []string{"bin", "installers"}
 
 // releaseNotesCandidateFiles is the ordered list of release-notes
-// file names checked when opening the Release dialog. ReleaseNotes.txt
-// is what this project uses; the others are common conventions for
-// projects Allan may release with the same dialog later. The matching
-// is filename-based; format-specific extraction beyond ReleaseNotes.txt
-// is a future enhancement.
+// file names checked when opening the Release dialog. ReleaseNotes.md
+// is what this project uses now (migrated from ReleaseNotes.txt); the
+// .txt form is still checked first-after for older repos, or ones not
+// yet migrated, and the others are common conventions for projects
+// Allan may release with the same dialog later. Each name's .md variant
+// is preferred over its .txt variant. The matching is filename-based;
+// format-specific extraction beyond the "Version X.Y.Z" header (plain
+// or as a markdown heading — see extractReleaseNotes) is a future
+// enhancement.
 var releaseNotesCandidateFiles = []string{
+	"ReleaseNotes.md",
 	"ReleaseNotes.txt",
-	"RELEASE_NOTES.txt",
 	"RELEASE_NOTES.md",
+	"RELEASE_NOTES.txt",
 	"RELEASES.md",
 	"CHANGELOG.md",
 }
@@ -140,13 +145,17 @@ func detectReleaseVersion(repoRoot string) string {
 	return ""
 }
 
-// extractReleaseNotes reads ReleaseNotes.txt (or whichever candidate
+// extractReleaseNotes reads ReleaseNotes.md/.txt (or whichever candidate
 // file exists) at repoRoot and returns the section matching the given
-// version. Format-specific to the "Version X.Y.Z - DATE" + ━━━ rule
-// layout this project uses. Returns the body with the header line and
-// trailing ━━━ separator removed, trimmed of leading/trailing blanks.
-// When no candidate file exists, returns ("", nil) so the dialog
-// opens with an empty notes field rather than refusing.
+// version. Recognizes the "Version X.Y.Z - DATE" + ━━━ rule layout this
+// project used historically, and also a markdown "## Version X.Y.Z"
+// heading (this project's convention going forward after the .md
+// migration) — both are matched by the same header/next-section regexes
+// below, which tolerate an optional leading "#" run. Returns the body
+// with the header line and trailing ━━━ separator (when present)
+// removed, trimmed of leading/trailing blanks. When no candidate file
+// exists, returns ("", nil) so the dialog opens with an empty notes
+// field rather than refusing.
 func extractReleaseNotes(repoRoot, version string) (notesPath, body string, err error) {
 	var data []byte
 	for _, candidate := range releaseNotesCandidateFiles {
@@ -160,8 +169,8 @@ func extractReleaseNotes(repoRoot, version string) (notesPath, body string, err 
 	if notesPath == "" {
 		return "", "", nil
 	}
-	headerRe := regexp.MustCompile(`(?i)^version\s+` + regexp.QuoteMeta(version) + `\b`)
-	nextSecRe := regexp.MustCompile(`(?i)^version\s+\d`)
+	headerRe := regexp.MustCompile(`(?i)^#{0,6}\s*version\s+` + regexp.QuoteMeta(version) + `\b`)
+	nextSecRe := regexp.MustCompile(`(?i)^#{0,6}\s*version\s+\d`)
 	lines := strings.Split(string(data), "\n")
 	var collecting bool
 	var collected []string
@@ -376,7 +385,7 @@ func shortHeadSummary(repoRoot string) string {
 // showReleaseDialog is the entry point for Repo ▾ → Release… / File
 // menu → Release…. Composes a publish-to-GitHub release operation
 // from the target repo's detected version (FyneApp.toml or latest
-// semver tag), its ReleaseNotes.txt, and the contents of bin/ +
+// semver tag), its ReleaseNotes.md/.txt, and the contents of bin/ +
 // installers/. The version is read from the *target* repo (the one
 // open in the explorer), not from the explorer's own appVersion —
 // otherwise releasing TaniumQuest would pre-fill with the explorer's
@@ -460,7 +469,7 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 	case repoVer == "":
 		notesHint.SetText("Couldn't detect a version for this repo (no FyneApp.toml, no semver tags) — fill in Tag/Title and paste release notes above.")
 	case notesPath == "":
-		notesHint.SetText("No ReleaseNotes.txt / CHANGELOG.md found in repo root — paste your release notes above.")
+		notesHint.SetText("No ReleaseNotes.md / ReleaseNotes.txt / CHANGELOG.md found in repo root — paste your release notes above.")
 	case notesErr != nil:
 		notesHint.SetText(fmt.Sprintf("Couldn't extract notes for v%s from %s — paste your notes above. (%v)", repoVer, filepath.Base(notesPath), notesErr))
 	default:
