@@ -20,6 +20,7 @@ const (
 	prefRememberWindowSize = "rememberWindowSize"
 	prefWindowWidth        = "windowWidth"
 	prefWindowHeight       = "windowHeight"
+	prefReopenLastFolder   = "reopenLastFolderOnLaunch"
 	prefSplitOffset        = "splitOffset" // main HSplit ratio (0.0–1.0), saved on quit
 
 	// Dep-scan "Scan All Repos" config + last-sweep badge state.

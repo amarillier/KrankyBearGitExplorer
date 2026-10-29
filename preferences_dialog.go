@@ -81,6 +81,11 @@ func showPreferences(a fyne.App, v *diffView) {
 	dailyDepAlertNote := widget.NewLabel("Once per day at the set time, sweeps your repos for open GitHub Dependabot alerts and updates the 🛡 header badge — silently, no pop-ups. If the machine is asleep at that time, it runs at the next opportunity after waking (still at most once a day). Needs the gh CLI authenticated (gh auth login). Local dep-scan stays on-demand.")
 	dailyDepAlertNote.Wrapping = fyne.TextWrapWord
 
+	reopenLast := widget.NewCheck("Reopen the most recently used folder on launch", nil)
+	reopenLast.Checked = a.Preferences().BoolWithFallback(prefReopenLastFolder, false)
+	reopenLastNote := widget.NewLabel("Off by default. When enabled, the explorer opens the folder you most recently worked in (the top of File → Open Recent Folder) instead of starting empty. If that folder no longer exists, the next most recent one is used.")
+	reopenLastNote.Wrapping = fyne.TextWrapWord
+
 	rememberWin := widget.NewCheck("Remember main window size between launches", nil)
 	rememberWin.Checked = a.Preferences().BoolWithFallback(prefRememberWindowSize, false)
 	rememberWinNote := widget.NewLabel("When enabled, the window size is stored when you quit the app (menu Quit, tray Quit, or closing the main window). When disabled, the app opens at the default size.")
@@ -162,6 +167,8 @@ func showPreferences(a fyne.App, v *diffView) {
 		singleDiffNote,
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle("Window", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		reopenLast,
+		reopenLastNote,
 		rememberWin,
 		rememberWinNote,
 		widget.NewSeparator(),
@@ -172,7 +179,12 @@ func showPreferences(a fyne.App, v *diffView) {
 		clearFolders,
 	)
 
-	d := dialog.NewCustomConfirm("Preferences", "Save", "Cancel", content, func(save bool) {
+	// Scroll so every option stays reachable when the main window is small;
+	// the dialog is clamped to the window size and would otherwise clip.
+	scroll := container.NewVScroll(content)
+	scroll.SetMinSize(fyne.NewSize(480, 260))
+
+	d := dialog.NewCustomConfirm("Preferences", "Save", "Cancel", scroll, func(save bool) {
 		if !save {
 			return
 		}
@@ -200,6 +212,7 @@ func showPreferences(a fyne.App, v *diffView) {
 			a.Preferences().SetString(prefDailyDepAlertTime, strings.TrimSpace(dailyDepAlertTime.Text))
 		}
 		a.Preferences().SetBool(prefRememberWindowSize, rememberWin.Checked)
+		a.Preferences().SetBool(prefReopenLastFolder, reopenLast.Checked)
 		// Ask the explorer to re-apply preferences (refresh the menu + the
 		// worktree listing in case "Show .git" flipped).
 		if explorerPrefsChangedHook != nil {

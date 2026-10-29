@@ -1,13 +1,21 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
+	"strings"
 	"time"
 )
 
+// The version lives in the VERSION file (build/version.sh X.Y.Z).
+//
+//go:embed VERSION
+var versionFile string
+
+var appVersion = strings.TrimSpace(versionFile)
+
 const (
-	appVersion = "0.9.12" // see FyneApp.toml
-	appAuthor  = "Allan Marillier"
+	appAuthor = "Allan Marillier"
 )
 
 var appName = "KrankyBear GitExplorer"
