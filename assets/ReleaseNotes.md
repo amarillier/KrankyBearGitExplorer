@@ -4,6 +4,18 @@
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
 - git log: --oneline, --stat, --decorate, after rebase - committer vs. author, -p -1 <file>, parent SHAs for merges?, trailers highlighted?
 
+## Version 1.0.0 - October 29, 2026
+
+- New preference (Window): "Reopen the most recently used folder on launch" — off by default
+- Release dialog now finds release notes in assets/ as well as the repo root
+- Quick Switch Repo (Ctrl/Cmd+P): filter-as-you-type picker over recent folders and discovered repos
+- Sync All Repos…: fetch --prune across all repos under your scan folders, see ahead/behind/dirty, and fast-forward the clean ones that are behind
+- Clean Up Branches…: list local branches merged into the default branch or whose remote branch is gone, and delete the selected ones (git branch -d, never forced)
+- Stage / unstage hunks…: file right-click menu, pick individual hunks to stage or unstage
+- Commit dialog: subject-line length counter and a "recent commit messages" picker
+- Release dialog: rendered Markdown preview of the notes, and a warning when the version's section is empty or only a placeholder bullet
+- Preferences, Commit, Push and Pull dialogs now scroll on small windows
+
 ## Version 0.9.12 - September 14, 2026
 
 Release notes go real Markdown. ReleaseNotes.txt is now ReleaseNotes.md —

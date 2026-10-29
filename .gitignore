@@ -29,7 +29,6 @@ latestcheck*.json
 bin/.DS_Store
 assets/
 dist/
-build/
 vendor/*
 sync*.sh
 compile*.sh
@@ -52,6 +51,9 @@ WINDOWS-SSH-SETUP.md
 # ALLOWED
 bin/*
 installers/*
-assets/*
+!assets/
 Inno/*
 
+# Build host details and retired scripts (see build/)
+/build/hosts.env
+/build/legacy/

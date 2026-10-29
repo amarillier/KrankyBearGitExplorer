@@ -1,0 +1,7 @@
+Current Version: {{version}}
+
+KrankyBear GitExplorer releases are hosted on GitHub, which allows public communication for automated version checking.
+
+Please visit the releases page below and compare the latest release tag with your current version.
+
+{{releases_url}}

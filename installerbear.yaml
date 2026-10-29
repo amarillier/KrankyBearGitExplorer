@@ -1,0 +1,68 @@
+identity:
+    name: KrankyBearGitExplorer
+    id: com.github.amarillier.KrankyBearGitExplorer
+    version: "1.0.0"
+    publisher: 'Allan Marillier, 2025-'
+    vendor: Allan Marillier
+    url: 'https://github.com/amarillier/KrankyBearGitExplorer'
+    description: KrankyBear GitExplorer - Cross-platform two-file diff tool
+    license: GPL v3
+    license_file: LICENSE
+    icons:
+        ico: assets/images/KrankyBearNerd.ico
+        icns: assets/images/KrankyBearNerd.icns
+        png: assets/images/KrankyBearNerd.png
+binaries:
+    - os: windows
+      arch: amd64
+      path: bin/KrankyBearGitExplorer.exe
+    - os: darwin
+      arch: amd64
+      path: bin/kbgitexplorer-macos-amd64
+    - os: darwin
+      arch: arm64
+      path: bin/kbgitexplorer-macos-arm64
+    - os: linux
+      arch: amd64
+      path: bin/kbgitexplorer-linux-amd64
+    - os: linux
+      arch: arm64
+      path: bin/kbgitexplorer-linux-arm64
+payload:
+    - source: assets/LICENSE
+      dest: assets
+    - source: assets/ReleaseNotes.md
+      dest: assets
+    - source: assets/i18n
+      dest: assets/i18n
+      recursive: true
+    - source: assets/images
+      dest: assets/images
+      recursive: true
+    - source: assets/sounds
+      dest: assets/sounds
+      recursive: true
+install:
+    windows: $PROGRAMFILES64\KrankyBearGitExplorer
+    macos: /Applications/KrankyBearGitExplorer.app
+    linux: /opt/KrankyBearGitExplorer
+install_experience:
+    launch_after_install: true
+    desktop_shortcut: true
+    autostart_at_login: true
+windows:
+    upgrade_guid: '{32D45CDA-716A-4ECA-925F-DBA017810E7D}'
+    exe_name: KrankyBearGitExplorer.exe
+    install_scope: ask
+macos:
+    bundle_executable: KrankyBearGitExplorer
+targets:
+    - deb
+    - rpm
+    - macpkg
+    - winexe
+    - winmsi
+output:
+    dir: installers
+    filename_template: '{{.Identity.Name}}_{{.Identity.Version}}_{{.Arch}}'
+    clean_old_versions: true

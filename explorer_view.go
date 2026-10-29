@@ -200,8 +200,28 @@ func openExplorerWindow(a fyne.App, master bool) *explorerView {
 	windowShow(w)
 	if master {
 		v.startDailyScanScheduler()
+		v.reopenLastFolderOnLaunch()
 	}
 	return v
+}
+
+// reopenLastFolderOnLaunch loads the most recently used folder when the
+// "Reopen last folder on launch" preference is on. Recents are stored most
+// recent first; a folder that has since vanished is dropped and the next
+// one is tried, so a moved/deleted repo never leaves the app on an error.
+func (v *explorerView) reopenLastFolderOnLaunch() {
+	if !v.app.Preferences().BoolWithFallback(prefReopenLastFolder, false) {
+		return
+	}
+	for _, p := range loadRecentFolders(v.app) {
+		if info, err := os.Stat(p); err != nil || !info.IsDir() {
+			removeRecentFolder(v.app, p)
+			continue
+		}
+		v.loadFolder(p)
+		v.refreshMenu()
+		return
+	}
 }
 
 func (v *explorerView) quitApp() {
@@ -1312,6 +1332,9 @@ func (v *explorerView) registerShortcuts(c fyne.Canvas) {
 	c.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyR, Modifier: fyne.KeyModifierShortcutDefault}, func(fyne.Shortcut) {
 		v.refresh()
 	})
+	c.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyP, Modifier: fyne.KeyModifierShortcutDefault}, func(fyne.Shortcut) {
+		v.showQuickSwitch()
+	})
 }
 
 func (v *explorerView) setupMenus(setTray bool) {
@@ -1382,10 +1405,16 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	push.Disabled = v.repo == nil
 	release := fyne.NewMenuItem("Release…", func() { v.publishRelease() })
 	release.Disabled = v.repo == nil
+	quickSwitch := fyne.NewMenuItem("Quick Switch Repo…", func() { v.showQuickSwitch() })
+	quickSwitch.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyP, Modifier: fyne.KeyModifierShortcutDefault}
+	syncAll := fyne.NewMenuItem("Sync All Repos…", func() { v.syncAllRepos() })
+	cleanBranches := fyne.NewMenuItem("Clean Up Branches…", func() { v.cleanUpBranches() })
+	cleanBranches.Disabled = v.repo == nil
 
 	file := fyne.NewMenu("File",
 		openFolder,
 		openRecent,
+		quickSwitch,
 		refresh,
 		fyne.NewMenuItemSeparator(),
 		commit,
@@ -1395,6 +1424,8 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		pull,
 		push,
 		release,
+		syncAll,
+		cleanBranches,
 		fyne.NewMenuItemSeparator(),
 		compare,
 		scanDeps,
@@ -1634,8 +1665,12 @@ func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
 	scanAllLocal := fyne.NewMenuItem("Scan All Repos (local)…", func() { v.runDepScanAll() })
 	scanThisLocal := fyne.NewMenuItem("Scan This Folder (local)…", func() { v.runDepScan() })
 
-	// Alphabetised: Commit, Initialize, Local Repo Identity, Manage Remotes, Pull, Push, Release.
-	return fyne.NewMenu("", commit, init, identity, manageRemotes, pull, push, release,
+	// Alphabetised: Commit, Clean Up Branches, Initialize, Local Repo Identity, Manage Remotes, Pull, Push, Release, Sync All Repos.
+	cleanBranches := fyne.NewMenuItem("Clean Up Branches…", func() { v.cleanUpBranches() })
+	cleanBranches.Disabled = v.repo == nil
+	syncAll := fyne.NewMenuItem("Sync All Repos…", func() { v.syncAllRepos() })
+
+	return fyne.NewMenu("", commit, cleanBranches, init, identity, manageRemotes, pull, push, release, syncAll,
 		fyne.NewMenuItemSeparator(),
 		auditLocal, depRepo, depAll, scanAllLocal, scanThisLocal)
 }
@@ -1796,6 +1831,19 @@ func (v *explorerView) showStashes() {
 		return
 	}
 	showStashesDialog(v.repo, v.win, v.repoRoot)
+}
+
+// syncAllRepos opens the fetch / fast-forward-everything dialog over the
+// repos under the configured scan roots.
+func (v *explorerView) syncAllRepos() {
+	showSyncAllDialog(v.app, v.win, func() { v.refresh() })
+}
+
+func (v *explorerView) cleanUpBranches() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showStaleBranchesDialog(v.win, v.repoRoot, func() { v.refresh() })
 }
 
 func (v *explorerView) guardRepoLoaded() bool {
@@ -2086,6 +2134,8 @@ func (v *explorerView) buildTrayMenu() *fyne.Menu {
 		fyne.NewMenuItem("Compare Two Files…", func() { openDiffWindow(v.app, false) }),
 		fyne.NewMenuItem("Open Folder…", func() { v.browseFolder() }),
 		trayRecentFolders,
+		fyne.NewMenuItem("Quick Switch Repo…", func() { v.showQuickSwitch() }),
+		fyne.NewMenuItem("Sync All Repos…", func() { v.syncAllRepos() }),
 		fyne.NewMenuItem("Preferences…", func() { showPreferences(v.app, nil) }),
 		fyne.NewMenuItem("Scan Dependencies…", func() { v.runDepScan() }),
 		fyne.NewMenuItem("Scan All Repos…", func() { v.runDepScanAll() }),

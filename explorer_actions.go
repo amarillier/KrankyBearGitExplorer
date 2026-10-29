@@ -116,6 +116,11 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 	})
 	gitAdd.Disabled = !canGitAdd
 
+	stageHunks := fyne.NewMenuItem("Stage / unstage hunks…", func() {
+		showHunkStageDialog(v.win, v.repoRoot, e.rel, func() { v.refresh() })
+	})
+	stageHunks.Disabled = !tracked || e.isDir
+
 	addIgnore := fyne.NewMenuItem("Add to .gitignore…", func() {
 		v.addToGitignore(e.name, e.rel)
 	})
@@ -158,6 +163,7 @@ func (v *explorerView) showRowContextMenu(id widget.ListItemID, pos fyne.Positio
 		fyne.NewMenuItemSeparator(),
 		addIgnore,
 		gitAdd,
+		stageHunks,
 		unignore,
 		fyne.NewMenuItemSeparator(),
 		deleteDisk,

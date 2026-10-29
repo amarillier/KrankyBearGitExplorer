@@ -37,6 +37,11 @@ import (
 // before installers feels more natural to scan top-to-bottom).
 var releaseAssetDirs = []string{"bin", "installers"}
 
+// releaseNotesDirs are searched (relative to the repo root) for
+// release-notes files, assets first: newer projects keep the only copy in
+// assets/ so it ships with the installer, older ones keep it in the root.
+var releaseNotesDirs = []string{"assets", "."}
+
 // releaseNotesCandidateFiles is the ordered list of release-notes
 // file names checked when opening the Release dialog. ReleaseNotes.md
 // is what this project uses now (migrated from ReleaseNotes.txt); the
@@ -157,21 +162,41 @@ func detectReleaseVersion(repoRoot string) string {
 // exists, returns ("", nil) so the dialog opens with an empty notes
 // field rather than refusing.
 func extractReleaseNotes(repoRoot, version string) (notesPath, body string, err error) {
+	// Notes live in assets/ (bundled with packaging) in newer projects and
+	// in the repo root in older ones, so look in both. The first file
+	// that actually has a section for this version wins; if none do, fall
+	// back to the first file found so the caller still gets a useful
+	// "no section for version" error naming it.
+	headerRe := regexp.MustCompile(`(?i)^#{0,6}\s*version\s+` + regexp.QuoteMeta(version) + `\b`)
+	nextSecRe := regexp.MustCompile(`(?i)^#{0,6}\s*version\s+\d`)
 	var data []byte
-	for _, candidate := range releaseNotesCandidateFiles {
-		p := filepath.Join(repoRoot, candidate)
-		if b, e := os.ReadFile(p); e == nil {
-			data = b
-			notesPath = p
-			break
+	for _, dir := range releaseNotesDirs {
+		for _, candidate := range releaseNotesCandidateFiles {
+			p := filepath.Join(repoRoot, dir, candidate)
+			b, e := os.ReadFile(p)
+			if e != nil {
+				continue
+			}
+			if notesPath == "" {
+				data, notesPath = b, p
+			}
+			for _, line := range strings.Split(string(b), "\n") {
+				if headerRe.MatchString(line) {
+					return extractNotesSection(p, string(b), headerRe, nextSecRe)
+				}
+			}
 		}
 	}
 	if notesPath == "" {
 		return "", "", nil
 	}
-	headerRe := regexp.MustCompile(`(?i)^#{0,6}\s*version\s+` + regexp.QuoteMeta(version) + `\b`)
-	nextSecRe := regexp.MustCompile(`(?i)^#{0,6}\s*version\s+\d`)
-	lines := strings.Split(string(data), "\n")
+	return extractNotesSection(notesPath, string(data), headerRe, nextSecRe)
+}
+
+// extractNotesSection returns the body of the section starting at the
+// first line matching headerRe, up to the next line matching nextSecRe.
+func extractNotesSection(notesPath, text string, headerRe, nextSecRe *regexp.Regexp) (string, string, error) {
+	lines := strings.Split(text, "\n")
 	var collecting bool
 	var collected []string
 	for _, line := range lines {
@@ -192,11 +217,25 @@ func extractReleaseNotes(repoRoot, version string) (notesPath, body string, err 
 	for len(collected) > 0 && strings.HasPrefix(strings.TrimSpace(collected[0]), "━") {
 		collected = collected[1:]
 	}
-	body = strings.TrimSpace(strings.Join(collected, "\n"))
+	body := strings.TrimSpace(strings.Join(collected, "\n"))
 	if body == "" {
-		return notesPath, "", fmt.Errorf("no section for version %q found in %s", version, notesPath)
+		return notesPath, "", fmt.Errorf("no section for the requested version found in %s", notesPath)
 	}
 	return notesPath, body, nil
+}
+
+// notesArePlaceholder reports whether release notes are empty or just the
+// bullet scaffolding left in a freshly-started version section (e.g. a
+// lone "-" line) — i.e. nothing a user of the release could actually read.
+func notesArePlaceholder(notes string) bool {
+	for _, line := range strings.Split(notes, "\n") {
+		switch strings.TrimSpace(line) {
+		case "", "-", "*", "+":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ghHostAuthenticated reports whether gh has a token stored for host.
@@ -469,11 +508,30 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 	case repoVer == "":
 		notesHint.SetText("Couldn't detect a version for this repo (no FyneApp.toml, no semver tags) — fill in Tag/Title and paste release notes above.")
 	case notesPath == "":
-		notesHint.SetText("No ReleaseNotes.md / ReleaseNotes.txt / CHANGELOG.md found in repo root — paste your release notes above.")
+		notesHint.SetText("No ReleaseNotes.md / ReleaseNotes.txt / CHANGELOG.md found in assets/ or repo root — paste your release notes above.")
 	case notesErr != nil:
 		notesHint.SetText(fmt.Sprintf("Couldn't extract notes for v%s from %s — paste your notes above. (%v)", repoVer, filepath.Base(notesPath), notesErr))
+	case notesArePlaceholder(defaultNotes):
+		notesHint.SetText(fmt.Sprintf("⚠ The v%s section in %s is empty (just a placeholder bullet) — write the notes before publishing.", repoVer, filepath.Base(notesPath)))
+		notesHint.Importance = widget.WarningImportance
 	default:
 		notesHint.SetText(fmt.Sprintf("Prefilled from %s — edit before publishing if needed.", filepath.Base(notesPath)))
+	}
+
+	// Rendered preview of the notes, as GitHub will show them. Refreshed
+	// when the Preview tab is opened so it always reflects the latest edits.
+	notesPreview := widget.NewRichTextFromMarkdown("")
+	notesPreview.Wrapping = fyne.TextWrapWord
+	notesPreviewScroll := container.NewVScroll(notesPreview)
+	notesPreviewScroll.SetMinSize(fyne.NewSize(600, 200))
+	notesTabs := container.NewAppTabs(
+		container.NewTabItem("Edit", notesEntry),
+		container.NewTabItem("Preview", notesPreviewScroll),
+	)
+	notesTabs.OnSelected = func(t *container.TabItem) {
+		if t.Text == "Preview" {
+			notesPreview.ParseMarkdown(notesEntry.Text)
+		}
 	}
 
 	// Assets list. Each row is a checkbox + display path + size, plus
@@ -566,8 +624,8 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 			dialog.ShowError(fmt.Errorf("tag and title are required"), parent)
 			return
 		}
-		if notes == "" {
-			dialog.ShowError(fmt.Errorf("release notes are required — paste or write them in the notes field"), parent)
+		if notesArePlaceholder(notes) {
+			dialog.ShowError(fmt.Errorf("release notes are required — paste or write them in the notes field (a lone placeholder bullet doesn't count)"), parent)
 			return
 		}
 		var selected []string
@@ -691,7 +749,7 @@ func showReleaseDialog(parent fyne.Window, repo *git.Repository, repoRoot string
 	)
 	notesSection := container.NewVBox(
 		widget.NewLabelWithStyle("Release notes", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		notesEntry,
+		notesTabs,
 		notesHint,
 	)
 	assetsScroll := container.NewVScroll(assetsCol)

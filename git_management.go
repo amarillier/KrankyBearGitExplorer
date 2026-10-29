@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -862,6 +863,30 @@ func previousCommitMessage(repoRoot string) string {
 // hasAnyCommits reports whether HEAD resolves to a commit. False on a
 // freshly-init'd repo where HEAD is an unborn symref. Amend is hidden
 // in that case — there's nothing to amend.
+// recentCommitSubjects returns up to n of the current branch's most recent
+// commit subject lines, de-duplicated, newest first. Empty on any error
+// (no commits yet, not a repo) so the caller just disables the picker.
+func recentCommitSubjects(repoRoot string, n int) []string {
+	out, err := exec.Command("git", "-C", repoRoot, "log", "-n", fmt.Sprint(n*2), "--format=%s").Output()
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var subjects []string
+	for _, l := range strings.Split(string(out), "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || seen[l] {
+			continue
+		}
+		seen[l] = true
+		subjects = append(subjects, l)
+		if len(subjects) >= n {
+			break
+		}
+	}
+	return subjects
+}
+
 func hasAnyCommits(repoRoot string) bool {
 	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", "--verify", "HEAD")
 	cmd.Stderr = nil
@@ -934,6 +959,44 @@ func showCommitDialog(parent fyne.Window, repoRoot string, onCommitted func()) {
 	messageEntry.SetPlaceHolder("Commit message (first line is the subject; leave a blank line before the body)")
 	messageEntry.SetMinRowsVisible(5)
 
+	// Subject-line counter: turns amber past 50 chars (git's soft
+	// convention) and red past 72 (where log views start wrapping).
+	subjectLabel := widget.NewLabel("")
+	subjectLabel.TextStyle = fyne.TextStyle{Italic: true}
+	updateSubject := func(text string) {
+		subject := text
+		if i := strings.IndexByte(subject, '\n'); i >= 0 {
+			subject = subject[:i]
+		}
+		n := utf8.RuneCountInString(subject)
+		msg := fmt.Sprintf("Subject: %d chars", n)
+		switch {
+		case n > 72:
+			msg += " — too long, aim for 50 (72 max)"
+			subjectLabel.Importance = widget.DangerImportance
+		case n > 50:
+			msg += " — getting long, aim for 50"
+			subjectLabel.Importance = widget.WarningImportance
+		default:
+			subjectLabel.Importance = widget.MediumImportance
+		}
+		subjectLabel.SetText(msg)
+	}
+	messageEntry.OnChanged = updateSubject
+	updateSubject("")
+
+	// Recent subjects from this repo, to reuse or tweak a message.
+	recentSubjects := recentCommitSubjects(repoRoot, 15)
+	recentSelect := widget.NewSelect(recentSubjects, func(sel string) {
+		if sel != "" {
+			messageEntry.SetText(sel)
+		}
+	})
+	recentSelect.PlaceHolder = "Recent commit messages…"
+	if len(recentSubjects) == 0 {
+		recentSelect.Disable()
+	}
+
 	stageAllCheck := widget.NewCheck("Stage all changes before committing (git add -A)", nil)
 
 	amendCheck := widget.NewCheck("Amend last commit (overwrite the previous commit with these changes)", nil)
@@ -1005,12 +1068,14 @@ func showCommitDialog(parent fyne.Window, repoRoot string, onCommitted func()) {
 		previewLabel,
 		widget.NewSeparator(),
 		widget.NewLabelWithStyle("Message", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		recentSelect,
 		messageEntry,
+		subjectLabel,
 		stageAllCheck,
 		amendCheck,
 	)
 
-	d := dialog.NewCustomConfirm("Commit", "Commit", "Cancel", content, func(ok bool) {
+	d := dialog.NewCustomConfirm("Commit", "Commit", "Cancel", scrollDialogContent(content, 520), func(ok bool) {
 		if !ok {
 			return
 		}
@@ -2117,7 +2182,7 @@ func showPushDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 		rescueRow,
 	)
 
-	d = dialog.NewCustomWithoutButtons("Push — "+filepathBase(repoRoot), content, parent)
+	d = dialog.NewCustomWithoutButtons("Push — "+filepathBase(repoRoot), scrollDialogContent(content, 520), parent)
 	d.Resize(fyne.NewSize(680, 460))
 	d.Show()
 }
@@ -2277,7 +2342,7 @@ func showPullDialog(parent fyne.Window, repo *git.Repository, repoRoot string, o
 		statusLabel,
 	)
 
-	d := dialog.NewCustom("Pull — "+filepathBase(repoRoot), "Close", content, parent)
+	d := dialog.NewCustom("Pull — "+filepathBase(repoRoot), "Close", scrollDialogContent(content, 520), parent)
 	d.Resize(fyne.NewSize(680, 420))
 	d.Show()
 }
