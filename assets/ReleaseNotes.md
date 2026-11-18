@@ -15,6 +15,7 @@
 - Commit dialog: subject-line length counter and a "recent commit messages" picker
 - Release dialog: rendered Markdown preview of the notes, and a warning when the version's section is empty or only a placeholder bullet
 - Preferences, Commit, Push and Pull dialogs now scroll on small windows
+- Windows: automatic Mesa3D software-OpenGL fallback (llvmpipe, or softpipe on conservative VM CPUs) for VMs and locked-down hosts with no hardware OpenGL; About shows the renderer in use
 
 ## Version 0.9.12 - September 14, 2026
 

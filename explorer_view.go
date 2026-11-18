@@ -648,8 +648,17 @@ func (v *explorerView) browseFolder() {
 		v.loadFolder(uri.Path())
 		v.refreshMenu()
 	}, v.win)
-	d.Resize(folderDialogSize(v.win))
+	// Show first: FileDialog.Resize dereferences the internal dialog, which
+	// only exists after Show() (and never for native OS dialogs).
 	d.Show()
+	resizeDialogSafe(d, folderDialogSize(v.win))
+}
+
+// resizeDialogSafe resizes a file dialog, tolerating Fyne versions/paths
+// (e.g. native OS pickers) where there is no in-app dialog to resize.
+func resizeDialogSafe(d *dialog.FileDialog, size fyne.Size) {
+	defer func() { _ = recover() }()
+	d.Resize(size)
 }
 
 // folderDialogSize sizes the folder-picker relative to the main window so

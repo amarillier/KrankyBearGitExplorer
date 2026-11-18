@@ -1,11 +1,11 @@
 identity:
     name: KrankyBearGitExplorer
     id: com.github.amarillier.KrankyBearGitExplorer
-    version: "1.0.0"
+    version: "1.0.1"
     publisher: 'Allan Marillier, 2025-'
     vendor: Allan Marillier
     url: 'https://github.com/amarillier/KrankyBearGitExplorer'
-    description: KrankyBear GitExplorer - Cross-platform two-file diff tool
+    description: KrankyBear GitExplorer - Cross-platform Git repository explorer
     license: GPL v3
     license_file: LICENSE
     icons:
@@ -41,6 +41,41 @@ payload:
       recursive: true
     - source: assets/sounds
       dest: assets/sounds
+      recursive: true
+    - source: assets/mesa-win/opengl32.dll
+      dest: mesa-fallback
+      os:
+        - windows
+    - source: assets/mesa-win/libgallium_wgl.dll
+      dest: mesa-fallback
+      os:
+        - windows
+    - source: assets/mesa-win/.force-mesa-fallback.sample
+      dest: mesa-fallback
+      os:
+        - windows
+    - source: assets/mesa-win/.force-mesa-compat.sample
+      dest: mesa-fallback
+      os:
+        - windows
+    - source: assets/mesa-win/.force-mesa-performance.sample
+      dest: mesa-fallback
+      os:
+        - windows
+    - source: assets/mesa-win/MESA_VERSION
+      dest: mesa-fallback
+      os:
+        - windows
+    - source: assets/mesa-win/MESA-NOTICE.txt
+      dest: mesa-fallback
+      os:
+        - windows
+    - source: assets/mesa-win/MESA-LICENSE.rst
+      dest: mesa-fallback
+      os:
+        - windows
+    - source: assets/mesa-win/licenses
+      dest: mesa-fallback/licenses
       recursive: true
 install:
     windows: $PROGRAMFILES64\KrankyBearGitExplorer

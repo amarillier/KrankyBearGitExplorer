@@ -280,6 +280,25 @@ WINDOWS
     - About, Check for Updates…, Help
     - Quit
 
+WINDOWS: SOFTWARE OPENGL FALLBACK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Automatic and invisible on a machine with working hardware OpenGL.
+On a Windows VM or locked-down host with none, the app would
+otherwise fail to open a window; instead it switches to a bundled
+Mesa3D software renderer (installed in the 'mesa-fallback' folder) and
+relaunches once.
+• The rasterizer is llvmpipe (fast) by default, or softpipe (safe) on
+  virtual CPUs without SSE4.1, where llvmpipe can hang after the
+  first frame. Command-line flags: -mesa-gl-compat forces softpipe,
+  -mesa-gl-performance forces llvmpipe.
+• Marker files in 'mesa-fallback' (rename the .sample files):
+  .force-mesa-fallback skips the hardware probe, .force-mesa-compat
+  and .force-mesa-performance pick the rasterizer.
+• To skip the one-time probe on a host known to need it, move
+  opengl32.dll and libgallium_wgl.dll from 'mesa-fallback' into the
+  same folder as the .exe.
+• Help → About shows which renderer is in use.
+
 COMPARE TWO FILES… (legacy diff tool)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 File → Compare Two Files… opens the two-pane side-by-side diff in a
