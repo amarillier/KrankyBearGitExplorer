@@ -45,6 +45,7 @@ rename-app.sh
 !dep-scan.ps1
 rsrc_windows_amd64.syso
 kbgitexplorer
+gitexplorer
 REUSABLE-DIALOGS-GUIDE.md
 WINDOWS-SSH-SETUP.md
 

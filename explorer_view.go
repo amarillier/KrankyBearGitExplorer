@@ -1414,6 +1414,8 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 	push.Disabled = v.repo == nil
 	release := fyne.NewMenuItem("Release…", func() { v.publishRelease() })
 	release.Disabled = v.repo == nil
+	manageReleases := fyne.NewMenuItem("Manage Releases…", func() { v.manageReleases() })
+	manageReleases.Disabled = v.repo == nil
 	quickSwitch := fyne.NewMenuItem("Quick Switch Repo…", func() { v.showQuickSwitch() })
 	quickSwitch.Shortcut = &desktop.CustomShortcut{KeyName: fyne.KeyP, Modifier: fyne.KeyModifierShortcutDefault}
 	syncAll := fyne.NewMenuItem("Sync All Repos…", func() { v.syncAllRepos() })
@@ -1433,6 +1435,7 @@ func (v *explorerView) buildMainMenu() *fyne.MainMenu {
 		pull,
 		push,
 		release,
+		manageReleases,
 		syncAll,
 		cleanBranches,
 		fyne.NewMenuItemSeparator(),
@@ -1666,6 +1669,9 @@ func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
 	release := fyne.NewMenuItem("Release…", func() { v.publishRelease() })
 	release.Disabled = v.repo == nil
 
+	manageReleases := fyne.NewMenuItem("Manage Releases…", func() { v.manageReleases() })
+	manageReleases.Disabled = v.repo == nil
+
 	// Security/scan section (separated), alphabetised within itself.
 	auditLocal := fyne.NewMenuItem("Audit Local Repos…", func() { runRepoAudit(v.app, v.win) })
 	depRepo := fyne.NewMenuItem("Dependabot: Check This Repo…", func() { v.checkDependabotAlerts() })
@@ -1679,7 +1685,7 @@ func (v *explorerView) buildRepoDropdownMenu() *fyne.Menu {
 	cleanBranches.Disabled = v.repo == nil
 	syncAll := fyne.NewMenuItem("Sync All Repos…", func() { v.syncAllRepos() })
 
-	return fyne.NewMenu("", commit, cleanBranches, init, identity, manageRemotes, pull, push, release, syncAll,
+	return fyne.NewMenu("", commit, cleanBranches, init, identity, manageRemotes, pull, push, release, manageReleases, syncAll,
 		fyne.NewMenuItemSeparator(),
 		auditLocal, depRepo, depAll, scanAllLocal, scanThisLocal)
 }
@@ -1788,6 +1794,14 @@ func (v *explorerView) publishRelease() {
 		return
 	}
 	showReleaseDialog(v.win, v.repo, v.repoRoot)
+}
+
+// manageReleases opens the list/delete GitHub releases dialog.
+func (v *explorerView) manageReleases() {
+	if !v.guardRepoLoaded() {
+		return
+	}
+	showManageReleasesDialog(v.win, v.repo, v.repoRoot)
 }
 
 // openRepoHealth pops the read-only Repo Health dialog (object-database

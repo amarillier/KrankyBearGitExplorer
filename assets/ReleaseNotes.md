@@ -4,6 +4,15 @@
 - maybe some day, maybe never: clone, branch, merge — these are much more in depth
 - git log: --oneline, --stat, --decorate, after rebase - committer vs. author, -p -1 <file>, parent SHAs for merges?, trailers highlighted?
 
+## Version 1.1.0 - November 18, 2026
+
+- New: Manage Releases… (File and Repo ▾ menus, next to Release…): list the repo's GitHub releases (tag, title, latest/draft/pre-release, date) and delete the selected ones via `gh release delete`, optionally removing the git tag too — no more dropping to the CLI to clear a release before re-releasing
+- Fix: crash (nil pointer panic) when opening a different folder via the folder picker — the dialog was resized before it was shown
+- Windows: Mesa3D software-OpenGL fallback now ships with its licenses and notice (mesa-fallback\MESA-NOTICE.txt); About shows the renderer in use and the Mesa credit, and the Mesa update/license helper scripts were added under build/tools
+- About: description and License/GitHub links now point at KrankyBearGitExplorer (previously still referenced KrankyBearDiff)
+- README: documented the Windows software-OpenGL fallback and its `-mesa-gl-compat` / `-mesa-gl-performance` overrides
+
+
 ## Version 1.0.0 - October 29, 2026
 
 - New preference (Window): "Reopen the most recently used folder on launch" — off by default
